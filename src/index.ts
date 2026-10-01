@@ -1,41 +1,62 @@
+import { mkdirSync } from "node:fs";
 import { Bot } from "grammy";
+import { makeAssistant } from "./assistant";
+import { Bridge, type TgApi } from "./bridge";
+import { Commands } from "./commands";
+import { loadConfig } from "./config";
+import { Db } from "./db";
+import { getEngine } from "./engines";
+import { CredStore, LoginManager } from "./login";
+import type { ProjectsApi, ProjectsCtx } from "./projects";
+import { ensureGeneral, SessionManager } from "./sessions";
+import { BOT_COMMANDS, registerHandlers } from "./telegram";
 
-const token = process.env.BOT_TOKEN;
-if (!token) {
-  console.error("BOT_TOKEN is not set. Copy .env.example to .env and fill it in.");
-  process.exit(1);
+const TG_LIMIT = 4000;
+
+const config = loadConfig();
+mkdirSync(config.dataDir, { recursive: true });
+mkdirSync(config.projectsRoot, { recursive: true });
+
+const login = new LoginManager(new CredStore(config.credsDir));
+
+const db = new Db(config.dbPath);
+const bot = new Bot(config.botToken);
+const api = bot.api as unknown as TgApi & ProjectsApi;
+
+const bridge = new Bridge(api, config.forumChatId, config.askTimeoutMs);
+
+const projectsCtx: ProjectsCtx = {
+  api,
+  db,
+  forumChatId: config.forumChatId,
+  projectsRoot: config.projectsRoot,
+  defaultEngine: config.defaultEngine,
+};
+const assistant = makeAssistant(projectsCtx);
+
+async function send(topicId: number, text: string): Promise<void> {
+  if (!text?.trim()) return;
+  const opts = topicId > 0 ? { message_thread_id: topicId } : {};
+  for (let i = 0; i < text.length; i += TG_LIMIT) {
+    await bot.api.sendMessage(config.forumChatId, text.slice(i, i + TG_LIMIT), opts);
+  }
 }
 
-const bot = new Bot(token);
-
-// Health check.
-bot.command("ping", (ctx) => ctx.reply("pong 🐒"));
-
-// Report where we are — useful while wiring up the forum (chat id + topic id).
-bot.command("whereami", (ctx) => {
-  const topic = ctx.message?.message_thread_id;
-  const isForum = (ctx.chat as { is_forum?: boolean }).is_forum ?? false;
-  return ctx.reply(
-    [
-      `chat_id: \`${ctx.chat.id}\``,
-      `chat_type: ${ctx.chat.type}`,
-      `is_forum: ${isForum}`,
-      `topic_id: ${topic ?? "(General / none)"}`,
-    ].join("\n"),
-    { parse_mode: "Markdown", message_thread_id: topic },
-  );
+const sessions = new SessionManager({
+  config,
+  db,
+  getEngine,
+  bridge,
+  send,
+  assistantServer: assistant.server,
 });
 
-// For now just observe traffic so routing can be designed against real updates.
-bot.on("message", (ctx) => {
-  const text = ctx.message.text ?? "<non-text message>";
-  console.log(
-    `[msg] chat=${ctx.chat.id} topic=${ctx.message.message_thread_id ?? "-"} ` +
-      `from=${ctx.from?.username ?? ctx.from?.id} :: ${text}`,
-  );
-});
+const commands = new Commands(db, config, sessions, getEngine);
 
-bot.catch((err) => console.error("[bot error]", err.error));
+ensureGeneral(db, config);
+registerHandlers(bot, config, { bridge, sessions, login, commands });
+
+await bot.api.setMyCommands(BOT_COMMANDS);
 
 bot.start({
   onStart: (info) => console.log(`apehub-bot online as @${info.username} (id ${info.id})`),
@@ -43,6 +64,7 @@ bot.start({
 
 const stop = () => {
   console.log("shutting down…");
+  db.close();
   void bot.stop();
 };
 process.once("SIGINT", stop);

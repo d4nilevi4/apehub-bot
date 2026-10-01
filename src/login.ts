@@ -1,0 +1,111 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+
+/**
+ * Per-user credential storage, written by the in-bot /login flow and read fresh
+ * by resolveSessionEnv / the engines. The bot now custodies model credentials
+ * (the user's explicit choice: login happens through the bot). Files are 0600 in
+ * a 0700 directory.
+ * ponytail: in-process custody; a separate-uid broker hardens this later.
+ */
+export class CredStore {
+  constructor(private dir: string) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+
+  /** Claude token (sk-ant-oat… subscription, or sk-ant-api… key) → <dir>/anthropic */
+  setClaude(token: string): void {
+    writeFileSync(`${this.dir}/anthropic`, token, { mode: 0o600 });
+  }
+
+  /** Codex ChatGPT-subscription creds (contents of ~/.codex/auth.json) → <dir>/codex/auth.json */
+  setCodexAuthJson(json: string): void {
+    const d = `${this.dir}/codex`;
+    mkdirSync(d, { recursive: true, mode: 0o700 });
+    writeFileSync(`${d}/auth.json`, json, { mode: 0o600 });
+  }
+
+  /** Codex OpenAI API key → <dir>/codex-api-key (injected later as CODEX_API_KEY) */
+  setCodexApiKey(key: string): void {
+    writeFileSync(`${this.dir}/codex-api-key`, key, { mode: 0o600 });
+  }
+}
+
+export type LoginEngine = "claude" | "codex";
+export interface LoginResult {
+  ok: boolean;
+  message: string;
+}
+
+const CLAUDE_INSTRUCTIONS = `🔐 Вход в *Claude*.
+На своём компьютере выполни \`claude setup-token\` (нужна подписка Pro/Max) и пришли сюда полученный токен \`sk-ant-oat01-…\`.
+Можно прислать и API-ключ \`sk-ant-api…\`.
+⚠️ Сообщение с токеном я удалю сразу после сохранения. Отмена — /cancel.`;
+
+const CODEX_INSTRUCTIONS = `🔐 Вход в *Codex*.
+Вариант 1 (подписка ChatGPT): на компьютере выполни \`codex login\`, затем пришли сюда *содержимое* файла \`~/.codex/auth.json\` (начинается с \`{\`).
+Вариант 2: пришли API-ключ OpenAI \`sk-…\`.
+⚠️ Сообщение удалю сразу после сохранения. Отмена — /cancel.`;
+
+/**
+ * Tracks a single pending login (one user per bot) and validates/stores whatever
+ * credential the user sends next.
+ */
+export class LoginManager {
+  private pending: { engine: LoginEngine; chatId: number; topicId: number } | null = null;
+
+  constructor(private store: CredStore) {}
+
+  start(engine: LoginEngine, chatId: number, topicId: number): string {
+    this.pending = { engine, chatId, topicId };
+    return engine === "claude" ? CLAUDE_INSTRUCTIONS : CODEX_INSTRUCTIONS;
+  }
+
+  isPending(): boolean {
+    return this.pending !== null;
+  }
+
+  cancel(): boolean {
+    const was = this.pending !== null;
+    this.pending = null;
+    return was;
+  }
+
+  /** Validate + store the submitted credential. On a bad value, keeps the login open for a retry. */
+  submit(text: string): LoginResult {
+    const p = this.pending;
+    if (!p) return { ok: false, message: "Нет активного логина. Начни с /login claude или /login codex." };
+    const raw = text.trim();
+
+    if (p.engine === "claude") {
+      if (!/^sk-ant-(oat|api)/.test(raw)) {
+        return { ok: false, message: "Это не похоже на токен Claude (жду sk-ant-oat… или sk-ant-api…). Пришли ещё раз или /cancel." };
+      }
+      this.store.setClaude(raw);
+      this.pending = null;
+      return {
+        ok: true,
+        message: raw.startsWith("sk-ant-oat")
+          ? "✅ Claude подключён по подписке. Напиши в любой топик — проверим."
+          : "✅ Claude подключён по API-ключу. Напиши в любой топик — проверим.",
+      };
+    }
+
+    // codex
+    if (raw.startsWith("{")) {
+      try {
+        JSON.parse(raw);
+      } catch {
+        return { ok: false, message: "Похоже на auth.json, но JSON не парсится. Пришли файл целиком ещё раз или /cancel." };
+      }
+      this.store.setCodexAuthJson(raw);
+      this.pending = null;
+      return { ok: true, message: "✅ Codex-креды (auth.json) сохранены. Сам движок Codex подключу следующим шагом." };
+    }
+    if (raw.startsWith("sk-")) {
+      this.store.setCodexApiKey(raw);
+      this.pending = null;
+      return { ok: true, message: "✅ Codex API-ключ сохранён. Сам движок Codex подключу следующим шагом." };
+    }
+    return { ok: false, message: "Для Codex пришли содержимое ~/.codex/auth.json (начинается с {) или API-ключ sk-… Или /cancel." };
+  }
+}
