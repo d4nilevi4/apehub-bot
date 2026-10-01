@@ -24,8 +24,13 @@ export class Commands {
   constructor(
     private db: Db,
     private config: Config,
-    private sessions: { interrupt(topicId: number): boolean; compact(topicId: number): Promise<void> },
+    private sessions: {
+      interrupt(topicId: number): boolean;
+      compact(topicId: number): Promise<void>;
+      isActive(topicId: number): boolean;
+    },
     private getEngine: (n: EngineName) => Engine,
+    private creds: { getGithubUser(): { login: string } | null },
   ) {}
 
   private proj(topicId: number): Project | null {
@@ -36,7 +41,11 @@ export class Commands {
     const p = this.proj(topicId);
     if (!p) return NOT_LINKED;
     const model = p.lastModel ?? p.model ?? "(дефолт движка)";
-    const session = p.sessionId ? "тёплая (есть история)" : "холодная (новая)";
+    const session = this.sessions.isActive(topicId)
+      ? "работает (идёт ответ)"
+      : p.sessionId
+        ? "простаивает (0 RAM, контекст сохранён)"
+        : "новая";
     return {
       text: [
         `📊 *${p.name}*`,
@@ -45,6 +54,7 @@ export class Commands {
         `Сессия: ${session}`,
         `Контекст: ${this.ctxLine(p)}`,
         `Автокомпакт: ${p.autocompact ? "вкл" : "выкл"}`,
+        `GitHub: ${this.creds.getGithubUser()?.login ?? "не подключён (/login github)"}`,
       ].join("\n"),
     };
   }
@@ -90,6 +100,16 @@ export class Commands {
 
   stop(topicId: number): CmdReply {
     return { text: this.sessions.interrupt(topicId) ? "⏹ Прерываю текущий ответ." : "Сейчас ничего не выполняется." };
+  }
+
+  /** Manual sleep. Auto-sleep (on idle) is handled by the session watchdog. */
+  sleep(topicId: number): CmdReply {
+    if (!this.proj(topicId)) return NOT_LINKED;
+    return {
+      text: this.sessions.interrupt(topicId)
+        ? "😴 Усыпляю сессию (прерываю текущий ход; контекст сохранён)."
+        : "Сессия простаивает — она уже холодная (0 RAM), контекст на диске. Пиши — продолжу.",
+    };
   }
 
   /** Fire-and-forget: sessions.compact sends its own progress messages. */
@@ -148,6 +168,7 @@ export class Commands {
         "/compact — сжать историю (резюме → новая сессия)",
         "/autocompact on|off — авто-сжатие при заполнении",
         "/new — начать новую сессию",
+        "/sleep — усыпить сессию вручную",
         "/stop — прервать текущий ответ",
         "/login claude|codex — вход в модель",
       ].join("\n"),

@@ -47,6 +47,11 @@ export class FakeEngine implements Engine {
   nextModel?: string;
   nextCtxUsed?: number;
   window?: number;
+  /** If set, run() hangs with no activity until the signal aborts (idle/stuck turn). */
+  stall = false;
+  /** If set, run() emits this many onActivity heartbeats, beatMs apart, before finishing. */
+  beats = 0;
+  beatMs = 20;
   /** If set, run() asks for permission to use this tool and records the decision. */
   permissionTool?: string;
   lastDecision?: unknown;
@@ -58,6 +63,14 @@ export class FakeEngine implements Engine {
 
   async run(o: RunOptions): Promise<RunResult> {
     this.calls.push(o);
+    if (this.stall) {
+      await new Promise<void>((resolve) => o.signal?.addEventListener("abort", () => resolve()));
+      return { sessionId: this.nextSessionId, text: "", isError: false };
+    }
+    for (let i = 0; i < this.beats; i++) {
+      o.onActivity?.();
+      await new Promise((r) => setTimeout(r, this.beatMs));
+    }
     if (this.permissionTool) {
       this.lastDecision = await o.onPermission({
         toolName: this.permissionTool,

@@ -1,17 +1,23 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import { GENERAL_TOPIC_ID } from "./constants";
 import { archiveProject, createProject, listProjects, type ProjectsCtx } from "./projects";
 
 type TextResult = { content: { type: "text"; text: string }[] };
 const text = (s: string): TextResult => ({ content: [{ type: "text", text: s }] });
+
+export interface AssistantExtras {
+  githubLogin: { start(topicId: number): Promise<string> };
+}
 
 /**
  * The General-topic assistant's orchestration tools. Handlers are exported so
  * they can be unit-tested without going through the MCP transport. `archive_project`
  * is intentionally left out of the session's allowlist so it prompts for confirmation.
  */
-export function makeAssistant(ctx: ProjectsCtx) {
+export function makeAssistant(ctx: ProjectsCtx, extras: AssistantExtras) {
   const handlers = {
+    github_login: async () => text(await extras.githubLogin.start(GENERAL_TOPIC_ID)),
     create_project: async (a: { name: string; engine?: "claude" | "opencode" | "codex" }) => {
       const p = await createProject(ctx, a.name, a.engine);
       return text(`Created project "${p.name}" (topic ${p.topicId}, engine ${p.engine}).`);
@@ -61,6 +67,12 @@ export function makeAssistant(ctx: ProjectsCtx) {
         "Archive (close) a project topic. Destructive — the user is asked to confirm.",
         { name: z.string() },
         handlers.archive_project,
+      ),
+      tool(
+        "github_login",
+        "Start GitHub login for the user via device flow. Returns a short code and a URL for the user to open; the connection completes in the background once they authorize.",
+        {},
+        handlers.github_login,
       ),
     ],
   });

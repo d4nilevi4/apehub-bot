@@ -21,6 +21,9 @@ export interface RunOptions {
   mcpServers?: Record<string, unknown>;
   allowedTools?: string[];
   signal?: AbortSignal;
+  /** Called on ANY engine event (text, tool use, permission, system) — a liveness
+   * heartbeat the session manager uses to tell "working" from "idle/stuck". */
+  onActivity?: () => void;
   /** Called for each assistant text block as it streams. */
   onText: (text: string) => void | Promise<void>;
   /** Called when the harness wants to run a tool that is not pre-approved. */

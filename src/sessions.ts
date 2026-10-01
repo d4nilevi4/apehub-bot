@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import type { Bridge } from "./bridge";
-import { hasCodexAuth, resolveCodexEnv, resolveSessionEnv, type Config, type EngineName } from "./config";
+import { hasCodexAuth, resolveCodexEnv, resolveGithubEnv, resolveSessionEnv, type Config, type EngineName } from "./config";
 import { makeCommsServer } from "./comms";
 import { ASSISTANT_CONTRACT, GENERAL_TOPIC_ID, TELEGRAM_CONTRACT } from "./constants";
 import type { Db, Project } from "./db";
@@ -22,6 +22,7 @@ const SAFE_TOOLS = [
   "mcp__apehub__create_project",
   "mcp__apehub__list_projects",
   "mcp__apehub__project_status",
+  "mcp__apehub__github_login",
   "Read",
   "Glob",
   "Grep",
@@ -65,12 +66,17 @@ export class SessionManager {
     });
   }
 
-  /** /stop: abort the turn currently running in this topic. */
+  /** /stop and manual /sleep: abort the turn currently running in this topic. */
   interrupt(topicId: number): boolean {
     const ac = this.active.get(topicId);
     if (!ac) return false;
     ac.abort();
     return true;
+  }
+
+  /** True while a turn is actively running in this topic. */
+  isActive(topicId: number): boolean {
+    return this.active.has(topicId);
   }
 
   private enqueue(topicId: number, fn: () => Promise<void>): Promise<void> {
@@ -88,22 +94,23 @@ export class SessionManager {
     return next;
   }
 
-  /** Build the engine env + check auth; sends a hint and returns null if not logged in. */
+  /** Build the full session env (model auth + git access); sends a hint and returns null if not logged in. */
   private authEnv(topicId: number, project: Project): Record<string, string> | null {
     const { config } = this.deps;
+    const git = resolveGithubEnv(config.credsDir); // empty unless logged into GitHub
     if (project.engine === "codex") {
       if (!hasCodexAuth(config.credsDir)) {
         void this.deps.send(topicId, "🔑 Не вошёл в Codex. Набери /login codex.");
         return null;
       }
-      return resolveCodexEnv(config.credsDir);
+      return { ...resolveCodexEnv(config.credsDir), ...git };
     }
     const env = resolveSessionEnv(process.env, config.credsDir);
     if (!env.ANTHROPIC_API_KEY && !env.CLAUDE_CODE_OAUTH_TOKEN) {
       void this.deps.send(topicId, "🔑 Не вошёл в модель. Набери /login claude (или /login codex).");
       return null;
     }
-    return env;
+    return { ...env, ...git };
   }
 
   private modelFor(project: Project): string | undefined {
@@ -139,7 +146,12 @@ export class SessionManager {
     if (isGeneral) mcpServers["apehub"] = this.deps.assistantServer;
 
     let sentAny = false;
+    let lastActivity = Date.now();
+    const bump = () => {
+      lastActivity = Date.now();
+    };
     const onText = async (t: string) => {
+      bump();
       if (t.trim()) {
         sentAny = true;
         await this.deps.send(topicId, t);
@@ -148,6 +160,16 @@ export class SessionManager {
 
     const ac = new AbortController();
     this.active.set(topicId, ac);
+    // Watchdog: sleep (abort) a turn only after it has been fully idle — no engine
+    // activity at all — for sleepAfterMs. A working agent keeps bumping, so it never sleeps.
+    let sleptByIdle = false;
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastActivity >= config.sleepAfterMs) {
+        sleptByIdle = true;
+        ac.abort();
+      }
+    }, Math.min(60_000, config.sleepAfterMs));
+
     db.setState(topicId, "busy");
     try {
       const res = await engine.run({
@@ -160,20 +182,31 @@ export class SessionManager {
         mcpServers,
         allowedTools: SAFE_TOOLS,
         signal: ac.signal,
+        onActivity: bump,
         onText,
-        onPermission: (req) => this.deps.bridge.requestPermission(topicId, req),
+        onPermission: (req) => {
+          bump();
+          return this.deps.bridge.requestPermission(topicId, req);
+        },
       });
+      // Session id is captured early (init/thread.started), so it's resumable even if slept.
       if (res.sessionId) db.setSession(topicId, res.sessionId);
-      db.setUsage(topicId, res.model ?? project.lastModel, res.ctxUsed ?? project.ctxUsed);
-      if (!sentAny && res.text) await this.deps.send(topicId, res.text);
 
-      // Auto-compact when the window is nearly full (only if we know the window).
-      const win = engine.capabilities.contextWindow(res.model ?? model);
-      if (project.autocompact && !res.isError && res.sessionId && res.ctxUsed && win && res.ctxUsed / win >= AUTOCOMPACT_AT) {
-        await this.deps.send(topicId, "🗜 Контекст почти полон — сжимаю историю…");
-        await this.doCompact(topicId, { ...project, sessionId: res.sessionId }, env, res.sessionId);
+      if (sleptByIdle) {
+        await this.deps.send(topicId, "😴 Усыпил сессию — агент простаивал без активности. Контекст сохранён, напиши — продолжу.");
+      } else if (!ac.signal.aborted) {
+        db.setUsage(topicId, res.model ?? project.lastModel, res.ctxUsed ?? project.ctxUsed);
+        if (!sentAny && res.text) await this.deps.send(topicId, res.text);
+
+        // Auto-compact when the window is nearly full (only if we know the window).
+        const win = engine.capabilities.contextWindow(res.model ?? model);
+        if (project.autocompact && !res.isError && res.sessionId && res.ctxUsed && win && res.ctxUsed / win >= AUTOCOMPACT_AT) {
+          await this.deps.send(topicId, "🗜 Контекст почти полон — сжимаю историю…");
+          await this.doCompact(topicId, { ...project, sessionId: res.sessionId }, env, res.sessionId);
+        }
       }
     } finally {
+      clearInterval(watchdog);
       this.active.delete(topicId);
       if (db.getProject(topicId)?.state !== "archived") db.setState(topicId, "idle");
     }

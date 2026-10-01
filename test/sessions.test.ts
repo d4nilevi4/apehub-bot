@@ -13,9 +13,14 @@ process.env.ANTHROPIC_API_KEY = "test-key";
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 
-function setup(engine = new FakeEngine()) {
+function setup(engine = new FakeEngine(), sleepMs?: number) {
   const dir = mkdtempSync(join(tmpdir(), "apehub-"));
-  const config: Config = loadConfig({ BOT_TOKEN: "x", FORUM_CHAT_ID: "-100", DATA_DIR: dir } as any);
+  const config: Config = loadConfig({
+    BOT_TOKEN: "x",
+    FORUM_CHAT_ID: "-100",
+    DATA_DIR: dir,
+    ...(sleepMs ? { SLEEP_AFTER_MS: String(sleepMs) } : {}),
+  } as any);
   const db = new Db(":memory:");
   const api = new FakeApi();
   const bridge = new Bridge(api, config.forumChatId, 1000);
@@ -165,6 +170,29 @@ test("compact summarizes the session and reseeds", async () => {
 test("interrupt returns false when nothing is running", () => {
   const { sm } = setup();
   expect(sm.interrupt(10)).toBe(false);
+});
+
+test("watchdog sleeps a fully idle (stalled) turn and keeps it resumable", async () => {
+  const engine = new FakeEngine();
+  engine.stall = true;
+  const { sm, db, sent } = setup(engine, 100); // sleep after 100ms of no activity
+  mkProject(db);
+  await sm.handle(10, "go quiet");
+  expect(sent.some((m) => m.text.includes("Усыпил"))).toBe(true);
+  expect(db.getProject(10)?.sessionId).toBe("sess-1"); // resumable
+  expect(sm.isActive(10)).toBe(false);
+});
+
+test("watchdog does NOT sleep a turn that keeps showing activity", async () => {
+  const engine = new FakeEngine();
+  engine.beats = 6;
+  engine.beatMs = 30; // 180ms of activity, 30ms gaps < 100ms threshold
+  const { sm, db, sent } = setup(engine, 100);
+  mkProject(db);
+  await sm.handle(10, "work hard");
+  expect(sent.some((m) => m.text.includes("Усыпил"))).toBe(false);
+  expect(sent.some((m) => m.text.includes("hello from agent"))).toBe(true);
+  expect(db.getProject(10)?.sessionId).toBe("sess-1");
 });
 
 test("no model auth: bails with a clear message, no engine run", async () => {

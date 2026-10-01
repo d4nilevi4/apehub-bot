@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 /**
  * Per-user credential storage, written by the in-bot /login flow and read fresh
@@ -27,6 +27,24 @@ export class CredStore {
   /** Codex OpenAI API key → <dir>/codex-api-key (injected later as CODEX_API_KEY) */
   setCodexApiKey(key: string): void {
     writeFileSync(`${this.dir}/codex-api-key`, key, { mode: 0o600 });
+  }
+
+  /** GitHub OAuth token (device flow) → <dir>/github-token */
+  setGithub(token: string): void {
+    writeFileSync(`${this.dir}/github-token`, token, { mode: 0o600 });
+  }
+
+  /** GitHub profile (login/email) for git authorship → <dir>/github-user.json */
+  setGithubUser(user: { login: string; email: string }): void {
+    writeFileSync(`${this.dir}/github-user.json`, JSON.stringify(user), { mode: 0o600 });
+  }
+
+  getGithubUser(): { login: string; email: string } | null {
+    try {
+      return JSON.parse(readFileSync(`${this.dir}/github-user.json`, "utf8"));
+    } catch {
+      return null;
+    }
   }
 }
 

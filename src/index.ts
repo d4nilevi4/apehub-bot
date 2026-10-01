@@ -6,6 +6,7 @@ import { Commands } from "./commands";
 import { loadConfig } from "./config";
 import { Db } from "./db";
 import { getEngine } from "./engines";
+import { GithubLogin } from "./github";
 import { CredStore, LoginManager } from "./login";
 import type { ProjectsApi, ProjectsCtx } from "./projects";
 import { ensureGeneral, SessionManager } from "./sessions";
@@ -17,7 +18,9 @@ const config = loadConfig();
 mkdirSync(config.dataDir, { recursive: true });
 mkdirSync(config.projectsRoot, { recursive: true });
 
-const login = new LoginManager(new CredStore(config.credsDir));
+const credStore = new CredStore(config.credsDir);
+const login = new LoginManager(credStore);
+const githubLogin = new GithubLogin(config.githubClientId, config.githubScope, credStore, send);
 
 const db = new Db(config.dbPath);
 const bot = new Bot(config.botToken);
@@ -32,7 +35,7 @@ const projectsCtx: ProjectsCtx = {
   projectsRoot: config.projectsRoot,
   defaultEngine: config.defaultEngine,
 };
-const assistant = makeAssistant(projectsCtx);
+const assistant = makeAssistant(projectsCtx, { githubLogin });
 
 async function send(topicId: number, text: string): Promise<void> {
   if (!text?.trim()) return;
@@ -51,10 +54,10 @@ const sessions = new SessionManager({
   assistantServer: assistant.server,
 });
 
-const commands = new Commands(db, config, sessions, getEngine);
+const commands = new Commands(db, config, sessions, getEngine, credStore);
 
 ensureGeneral(db, config);
-registerHandlers(bot, config, { bridge, sessions, login, commands });
+registerHandlers(bot, config, { bridge, sessions, login, commands, githubLogin });
 
 await bot.api.setMyCommands(BOT_COMMANDS);
 

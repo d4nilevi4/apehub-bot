@@ -48,6 +48,7 @@ export class ClaudeEngine implements Engine {
     let ctxUsed: number | undefined;
 
     for await (const msg of q as AsyncIterable<Record<string, any>>) {
+      o.onActivity?.();
       if (typeof msg.session_id === "string") sessionId = msg.session_id;
       if (msg.type === "system" && msg.subtype === "init") {
         if (typeof msg.model === "string") model = msg.model;

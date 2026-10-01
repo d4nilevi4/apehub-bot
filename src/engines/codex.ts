@@ -118,6 +118,7 @@ export class CodexEngine implements Engine {
 
     const rl = createInterface({ input: child.stdout });
     for await (const line of rl) {
+      o.onActivity?.();
       const t = parseCodexLine(st, line);
       if (t) await o.onText(t);
     }

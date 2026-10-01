@@ -17,7 +17,8 @@ function setup() {
     projectsRoot: mkdtempSync(join(tmpdir(), "apehub-")),
     defaultEngine: "claude",
   };
-  return { ...makeAssistant(ctx), api, db };
+  const githubLogin = { start: async () => "🔐 GitHub: открой ссылку, код ABCD-1234" };
+  return { ...makeAssistant(ctx, { githubLogin }), api, db };
 }
 
 function textOf(r: { content: { type: "text"; text: string }[] }): string {
@@ -48,7 +49,12 @@ test("archive_project closes and reports; unknown name is handled", async () => 
   expect(textOf(await handlers.archive_project({ name: "nope" }))).toContain("No project");
 });
 
-test("server exposes the four orchestration tools", () => {
+test("github_login tool starts the device flow", async () => {
+  const { handlers } = setup();
+  expect(textOf(await handlers.github_login())).toContain("ABCD-1234");
+});
+
+test("server exposes the orchestration tools", () => {
   const { server } = setup();
   expect(server).toBeDefined();
   // createSdkMcpServer returns an sdk-type server config

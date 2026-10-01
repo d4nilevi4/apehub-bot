@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { resolveSessionEnv } from "../src/config";
+import { resolveGithubEnv, resolveSessionEnv } from "../src/config";
 import { CredStore, LoginManager } from "../src/login";
 
 function setup() {
@@ -60,4 +60,23 @@ test("resolveSessionEnv reads the logged-in credential from credsDir (wins over 
   const env = resolveSessionEnv({ ANTHROPIC_API_KEY: "sk-ant-api03-stale" } as any, dir);
   expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("sk-ant-oat01-live");
   expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+});
+
+test("CredStore GitHub token + profile round-trip", () => {
+  const { dir, store } = setup();
+  store.setGithub("ghu_tok");
+  store.setGithubUser({ login: "me", email: "me@x" });
+  expect(readFileSync(join(dir, "github-token"), "utf8")).toBe("ghu_tok");
+  expect(store.getGithubUser()).toEqual({ login: "me", email: "me@x" });
+});
+
+test("resolveGithubEnv: empty without token; env + gitconfig with token", () => {
+  const { dir, store } = setup();
+  expect(resolveGithubEnv(dir)).toEqual({});
+  store.setGithub("ghu_tok");
+  store.setGithubUser({ login: "me", email: "me@x" });
+  const env = resolveGithubEnv(dir);
+  expect(env.GH_TOKEN).toBe("ghu_tok");
+  expect(env.GIT_CONFIG_GLOBAL).toBe(join(dir, "gitconfig"));
+  expect(readFileSync(env.GIT_CONFIG_GLOBAL!, "utf8")).toContain("me@x");
 });

@@ -11,6 +11,7 @@ export interface Handlers {
   sessions: SessionManager;
   login: LoginManager;
   commands: Commands;
+  githubLogin: { start(topicId: number): Promise<string> };
 }
 
 /** Shown in Telegram's "/" command menu (set via setMyCommands at startup). */
@@ -22,8 +23,9 @@ export const BOT_COMMANDS = [
   { command: "compact", description: "сжать историю (резюме → новая сессия)" },
   { command: "autocompact", description: "авто-сжатие: on | off" },
   { command: "new", description: "начать новую сессию" },
+  { command: "sleep", description: "усыпить сессию вручную" },
   { command: "stop", description: "прервать текущий ответ" },
-  { command: "login", description: "вход в модель: claude | codex" },
+  { command: "login", description: "вход: claude | codex | github" },
   { command: "cancel", description: "отменить ввод логина" },
   { command: "help", description: "список команд" },
   { command: "ping", description: "проверка связи" },
@@ -55,6 +57,7 @@ export function registerHandlers(bot: Bot, config: Config, deps: Handlers): void
   bot.command("engine", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.engine(topicOf(ctx), ctx.match)));
   bot.command("autocompact", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.autocompact(topicOf(ctx), ctx.match)));
   bot.command("new", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.reset(topicOf(ctx))));
+  bot.command("sleep", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.sleep(topicOf(ctx))));
   bot.command("stop", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.stop(topicOf(ctx))));
   bot.command("help", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.help()));
   bot.command("compact", (ctx) => {
@@ -70,11 +73,15 @@ export function registerHandlers(bot: Bot, config: Config, deps: Handlers): void
     });
   });
 
-  bot.command("login", (ctx) => {
+  bot.command("login", async (ctx) => {
     const topicId = ctx.message?.message_thread_id ?? GENERAL_TOPIC_ID;
     const arg = (ctx.match || "").trim().toLowerCase();
+    if (arg === "github") {
+      const msg = await deps.githubLogin.start(topicId);
+      return ctx.reply(msg, { ...thread(topicId), parse_mode: "Markdown" });
+    }
     if (arg !== "claude" && arg !== "codex") {
-      return ctx.reply("Использование: /login claude  или  /login codex", thread(topicId));
+      return ctx.reply("Использование: /login claude | /login codex | /login github", thread(topicId));
     }
     const msg = deps.login.start(arg as LoginEngine, ctx.chat.id, topicId);
     return ctx.reply(msg, { ...thread(topicId), parse_mode: "Markdown" });

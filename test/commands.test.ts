@@ -13,7 +13,7 @@ function base(over: Partial<Project>): Project {
   };
 }
 
-function setup(project?: Partial<Project>) {
+function setup(project?: Partial<Project>, active = false, githubUser: { login: string } | null = null) {
   const db = new Db(":memory:");
   db.upsertProject(base({ topicId: 0, name: "General" }));
   if (project) db.upsertProject(base(project));
@@ -21,13 +21,14 @@ function setup(project?: Partial<Project>) {
   const sessions = {
     interrupt: (t: number) => {
       calls.interrupt.push(t);
-      return true;
+      return active;
     },
     compact: async (t: number) => {
       calls.compact.push(t);
     },
+    isActive: () => active,
   };
-  const cmd = new Commands(db, {} as Config, sessions, getEngine);
+  const cmd = new Commands(db, {} as Config, sessions, getEngine, { getGithubUser: () => githubUser });
   return { db, cmd, calls };
 }
 
@@ -101,4 +102,19 @@ test("engine switch clears session; General stays claude", () => {
 test("codex engine offers its own model list", () => {
   const { cmd } = setup({ topicId: 10, engine: "codex" });
   expect(cmd.switchModel(10).buttons?.flat().map((b) => b.data)).toEqual(["sm:gpt-5-codex", "sm:gpt-5", "sm:o3"]);
+});
+
+test("status reflects working vs idle state", () => {
+  expect(setup({ topicId: 10, sessionId: "s1" }, false).cmd.status(10).text).toContain("простаивает");
+  expect(setup({ topicId: 10, sessionId: "s1" }, true).cmd.status(10).text).toContain("работает");
+});
+
+test("sleep interrupts an active turn, reassures when idle", () => {
+  expect(setup({ topicId: 10 }, true).cmd.sleep(10).text).toContain("Усыпляю");
+  expect(setup({ topicId: 10 }, false).cmd.sleep(10).text).toContain("простаивает");
+});
+
+test("status shows GitHub connection", () => {
+  expect(setup({ topicId: 10 }, false, null).cmd.status(10).text).toContain("не подключён");
+  expect(setup({ topicId: 10 }, false, { login: "octocat" }).cmd.status(10).text).toContain("octocat");
 });

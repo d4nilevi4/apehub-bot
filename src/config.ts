@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 export type EngineName = "claude" | "opencode" | "codex";
 
@@ -12,6 +12,11 @@ export interface Config {
   defaultEngine: EngineName;
   model?: string;
   askTimeoutMs: number;
+  /** Idle time (no engine activity) after which a running turn is auto-slept. */
+  sleepAfterMs: number;
+  /** OAuth App client id for GitHub device-flow login (public, not a secret). */
+  githubClientId?: string;
+  githubScope: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -32,6 +37,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     defaultEngine: (env.DEFAULT_ENGINE as EngineName) ?? "claude",
     model: env.MODEL || undefined,
     askTimeoutMs: Number(env.ASK_TIMEOUT_MS) || 10 * 60_000,
+    sleepAfterMs: Number(env.SLEEP_AFTER_MS) || 30 * 60_000,
+    githubClientId: env.GITHUB_CLIENT_ID || undefined,
+    githubScope: env.GITHUB_SCOPE || "repo",
   };
 }
 
@@ -95,4 +103,31 @@ export function resolveCodexEnv(credsDir: string): Record<string, string> {
 
 export function hasCodexAuth(credsDir: string): boolean {
   return existsSync(`${credsDir}/codex/auth.json`) || readTrim(`${credsDir}/codex-api-key`) !== undefined;
+}
+
+/**
+ * Git access for sessions when the user has logged into GitHub. Writes a per-user
+ * gitconfig whose credential helper reads the token from $GH_TOKEN (so the token
+ * itself is never written into the file) and sets commit authorship to the user.
+ */
+export function resolveGithubEnv(credsDir: string): Record<string, string> {
+  const token = readTrim(`${credsDir}/github-token`);
+  if (!token) return {};
+  let name = "ApeHub";
+  let email = "apehub@users.noreply.github.com";
+  try {
+    const u = JSON.parse(readFileSync(`${credsDir}/github-user.json`, "utf8"));
+    if (u.login) name = u.login;
+    if (u.email) email = u.email;
+  } catch {
+    /* no profile yet */
+  }
+  const gitconfig = `${credsDir}/gitconfig`;
+  const helper = `!f() { test "$1" = get && printf 'username=x-access-token\\npassword=%s\\n' "$GH_TOKEN"; }; f`;
+  writeFileSync(
+    gitconfig,
+    `[user]\n\tname = ${name}\n\temail = ${email}\n[credential "https://github.com"]\n\thelper = ${helper}\n`,
+    { mode: 0o600 },
+  );
+  return { GH_TOKEN: token, GITHUB_TOKEN: token, GIT_CONFIG_GLOBAL: gitconfig, GIT_TERMINAL_PROMPT: "0" };
 }
