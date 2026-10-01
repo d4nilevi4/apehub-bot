@@ -2,8 +2,9 @@ import { mkdirSync } from "node:fs";
 import { Bot } from "grammy";
 import { makeAssistant } from "./assistant";
 import { Bridge, type TgApi } from "./bridge";
+import { Broker } from "./broker";
 import { Commands } from "./commands";
-import { loadConfig } from "./config";
+import { hasWeeek, loadConfig } from "./config";
 import { Db } from "./db";
 import { getEngine } from "./engines";
 import { GithubLogin } from "./github";
@@ -45,6 +46,8 @@ async function send(topicId: number, text: string): Promise<void> {
   }
 }
 
+const broker = new Broker();
+
 const sessions = new SessionManager({
   config,
   db,
@@ -52,9 +55,17 @@ const sessions = new SessionManager({
   bridge,
   send,
   assistantServer: assistant.server,
+  broker,
 });
 
-const commands = new Commands(db, config, sessions, getEngine, credStore);
+const commands = new Commands(
+  db,
+  config,
+  sessions,
+  getEngine,
+  { getGithubUser: () => credStore.getGithubUser(), hasWeeek: () => hasWeeek(config.credsDir) },
+  broker,
+);
 
 ensureGeneral(db, config);
 registerHandlers(bot, config, { bridge, sessions, login, commands, githubLogin });

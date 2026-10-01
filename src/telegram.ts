@@ -25,7 +25,8 @@ export const BOT_COMMANDS = [
   { command: "new", description: "начать новую сессию" },
   { command: "sleep", description: "усыпить сессию вручную" },
   { command: "stop", description: "прервать текущий ответ" },
-  { command: "login", description: "вход: claude | codex | github" },
+  { command: "jobs", description: "очередь тяжёлых задач (брокер)" },
+  { command: "login", description: "вход: claude | codex | github | weeek" },
   { command: "cancel", description: "отменить ввод логина" },
   { command: "help", description: "список команд" },
   { command: "ping", description: "проверка связи" },
@@ -59,6 +60,7 @@ export function registerHandlers(bot: Bot, config: Config, deps: Handlers): void
   bot.command("new", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.reset(topicOf(ctx))));
   bot.command("sleep", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.sleep(topicOf(ctx))));
   bot.command("stop", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.stop(topicOf(ctx))));
+  bot.command("jobs", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.jobs()));
   bot.command("help", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.help()));
   bot.command("compact", (ctx) => {
     const r = deps.commands.compact(topicOf(ctx));
@@ -80,8 +82,8 @@ export function registerHandlers(bot: Bot, config: Config, deps: Handlers): void
       const msg = await deps.githubLogin.start(topicId);
       return ctx.reply(msg, { ...thread(topicId), parse_mode: "Markdown" });
     }
-    if (arg !== "claude" && arg !== "codex") {
-      return ctx.reply("Использование: /login claude | /login codex | /login github", thread(topicId));
+    if (arg !== "claude" && arg !== "codex" && arg !== "weeek") {
+      return ctx.reply("Использование: /login claude | codex | github | weeek", thread(topicId));
     }
     const msg = deps.login.start(arg as LoginEngine, ctx.chat.id, topicId);
     return ctx.reply(msg, { ...thread(topicId), parse_mode: "Markdown" });

@@ -1,10 +1,12 @@
 import { mkdirSync } from "node:fs";
 import type { Bridge } from "./bridge";
-import { hasCodexAuth, resolveCodexEnv, resolveGithubEnv, resolveSessionEnv, type Config, type EngineName } from "./config";
+import { Broker, makeBrokerServer } from "./broker";
+import { hasCodexAuth, hasWeeek, resolveCodexEnv, resolveGithubEnv, resolveSessionEnv, type Config, type EngineName } from "./config";
 import { makeCommsServer } from "./comms";
 import { ASSISTANT_CONTRACT, GENERAL_TOPIC_ID, TELEGRAM_CONTRACT } from "./constants";
 import type { Db, Project } from "./db";
 import type { Engine } from "./engine";
+import { makeWeeekServer, WEEEK_TOOLS } from "./weeek";
 
 export interface SessionDeps {
   config: Config;
@@ -14,6 +16,8 @@ export interface SessionDeps {
   send: (topicId: number, text: string) => Promise<void> | void;
   /** MCP server with the General-assistant orchestration tools. */
   assistantServer: unknown;
+  /** Shared heavy-job broker (one queue, server-wide caps). */
+  broker: Broker;
 }
 
 /** Tools pre-approved for every session; anything else prompts the user via buttons. */
@@ -23,6 +27,7 @@ const SAFE_TOOLS = [
   "mcp__apehub__list_projects",
   "mcp__apehub__project_status",
   "mcp__apehub__github_login",
+  ...WEEEK_TOOLS,
   "Read",
   "Glob",
   "Grep",
@@ -142,8 +147,10 @@ export class SessionManager {
 
     const mcpServers: Record<string, unknown> = {
       "apehub-comms": makeCommsServer(this.deps.bridge, topicId),
+      broker: makeBrokerServer(this.deps.broker),
     };
     if (isGeneral) mcpServers["apehub"] = this.deps.assistantServer;
+    if (hasWeeek(config.credsDir)) mcpServers["weeek"] = makeWeeekServer(config.credsDir, config.weeekApiBase);
 
     let sentAny = false;
     let lastActivity = Date.now();

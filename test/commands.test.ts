@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { BrokerJob } from "../src/broker";
 import { Commands } from "../src/commands";
 import type { Config } from "../src/config";
 import { Db, type Project } from "../src/db";
@@ -13,7 +14,13 @@ function base(over: Partial<Project>): Project {
   };
 }
 
-function setup(project?: Partial<Project>, active = false, githubUser: { login: string } | null = null) {
+function setup(
+  project?: Partial<Project>,
+  active = false,
+  githubUser: { login: string } | null = null,
+  weeek = false,
+  jobs: BrokerJob[] = [],
+) {
   const db = new Db(":memory:");
   db.upsertProject(base({ topicId: 0, name: "General" }));
   if (project) db.upsertProject(base(project));
@@ -28,7 +35,14 @@ function setup(project?: Partial<Project>, active = false, githubUser: { login: 
     },
     isActive: () => active,
   };
-  const cmd = new Commands(db, {} as Config, sessions, getEngine, { getGithubUser: () => githubUser });
+  const cmd = new Commands(
+    db,
+    {} as Config,
+    sessions,
+    getEngine,
+    { getGithubUser: () => githubUser, hasWeeek: () => weeek },
+    { list: () => jobs },
+  );
   return { db, cmd, calls };
 }
 
@@ -114,7 +128,20 @@ test("sleep interrupts an active turn, reassures when idle", () => {
   expect(setup({ topicId: 10 }, false).cmd.sleep(10).text).toContain("простаивает");
 });
 
-test("status shows GitHub connection", () => {
-  expect(setup({ topicId: 10 }, false, null).cmd.status(10).text).toContain("не подключён");
-  expect(setup({ topicId: 10 }, false, { login: "octocat" }).cmd.status(10).text).toContain("octocat");
+test("jobs lists the broker queue", () => {
+  expect(setup({ topicId: 10 }).cmd.jobs().text).toContain("пуста");
+  const withJobs = setup({ topicId: 10 }, false, null, false, [
+    { id: 1, kind: "unity", command: "blender render", state: "running" },
+  ]).cmd.jobs().text;
+  expect(withJobs).toContain("#1");
+  expect(withJobs).toContain("unity");
+});
+
+test("status shows GitHub and Weeek connection", () => {
+  const off = setup({ topicId: 10 }, false, null, false).cmd.status(10).text;
+  expect(off).toContain("GitHub: не подключён");
+  expect(off).toContain("Weeek: не подключён");
+  const on = setup({ topicId: 10 }, false, { login: "octocat" }, true).cmd.status(10).text;
+  expect(on).toContain("octocat");
+  expect(on).toContain("Weeek: подключён");
 });

@@ -29,6 +29,15 @@ test("claude: junk is rejected and login stays open; API key then accepted", () 
   expect(login.isPending()).toBe(false);
 });
 
+test("weeek: stores the token and clears the login; too-short is rejected", () => {
+  const { dir, login } = setup();
+  login.start("weeek", 1, 0);
+  expect(login.submit("short").ok).toBe(false);
+  expect(login.isPending()).toBe(true);
+  expect(login.submit("weeek-token-abcdef").ok).toBe(true);
+  expect(readFileSync(join(dir, "weeek-token"), "utf8")).toBe("weeek-token-abcdef");
+});
+
 test("codex: auth.json is stored under codex/auth.json", () => {
   const { dir, login } = setup();
   login.start("codex", 1, 0);

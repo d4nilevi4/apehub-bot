@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { Bridge } from "../src/bridge";
+import { Broker } from "../src/broker";
 import { loadConfig, type Config } from "../src/config";
 import { ASSISTANT_CONTRACT, TELEGRAM_CONTRACT } from "../src/constants";
 import { Db, type Project } from "../src/db";
@@ -32,6 +33,7 @@ function setup(engine = new FakeEngine(), sleepMs?: number) {
     bridge,
     send: (topicId, text) => void sent.push({ topicId, text }),
     assistantServer: { type: "sdk", name: "apehub" },
+    broker: new Broker(),
   });
   return { sm, db, api, bridge, engine, sent, config };
 }

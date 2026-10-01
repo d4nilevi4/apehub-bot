@@ -17,6 +17,7 @@ export interface Config {
   /** OAuth App client id for GitHub device-flow login (public, not a secret). */
   githubClientId?: string;
   githubScope: string;
+  weeekApiBase: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -40,6 +41,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sleepAfterMs: Number(env.SLEEP_AFTER_MS) || 30 * 60_000,
     githubClientId: env.GITHUB_CLIENT_ID || undefined,
     githubScope: env.GITHUB_SCOPE || "repo",
+    weeekApiBase: env.WEEEK_API_BASE || "https://api.weeek.net/public/v1",
   };
 }
 
@@ -103,6 +105,14 @@ export function resolveCodexEnv(credsDir: string): Record<string, string> {
 
 export function hasCodexAuth(credsDir: string): boolean {
   return existsSync(`${credsDir}/codex/auth.json`) || readTrim(`${credsDir}/codex-api-key`) !== undefined;
+}
+
+export function resolveWeeekToken(credsDir: string): string | undefined {
+  return readTrim(`${credsDir}/weeek-token`);
+}
+
+export function hasWeeek(credsDir: string): boolean {
+  return resolveWeeekToken(credsDir) !== undefined;
 }
 
 /**

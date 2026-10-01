@@ -1,3 +1,4 @@
+import type { BrokerJob } from "./broker";
 import type { Config, EngineName } from "./config";
 import { GENERAL_TOPIC_ID } from "./constants";
 import type { Db, Project } from "./db";
@@ -30,7 +31,8 @@ export class Commands {
       isActive(topicId: number): boolean;
     },
     private getEngine: (n: EngineName) => Engine,
-    private creds: { getGithubUser(): { login: string } | null },
+    private creds: { getGithubUser(): { login: string } | null; hasWeeek(): boolean },
+    private broker: { list(): BrokerJob[] },
   ) {}
 
   private proj(topicId: number): Project | null {
@@ -55,6 +57,7 @@ export class Commands {
         `Контекст: ${this.ctxLine(p)}`,
         `Автокомпакт: ${p.autocompact ? "вкл" : "выкл"}`,
         `GitHub: ${this.creds.getGithubUser()?.login ?? "не подключён (/login github)"}`,
+        `Weeek: ${this.creds.hasWeeek() ? "подключён" : "не подключён (/login weeek)"}`,
       ].join("\n"),
     };
   }
@@ -157,6 +160,14 @@ export class Commands {
     return { text: `✅ Движок: *${name}*. Сессия сброшена (у движков разный формат истории).` };
   }
 
+  jobs(): CmdReply {
+    const js = this.broker.list();
+    if (!js.length) return { text: "🏗 Очередь брокера пуста." };
+    return {
+      text: "🏗 Задачи брокера:\n" + js.map((j) => `#${j.id} [${j.kind}] ${j.state}: ${j.command.slice(0, 60)}`).join("\n"),
+    };
+  }
+
   help(): CmdReply {
     return {
       text: [
@@ -170,7 +181,8 @@ export class Commands {
         "/new — начать новую сессию",
         "/sleep — усыпить сессию вручную",
         "/stop — прервать текущий ответ",
-        "/login claude|codex — вход в модель",
+        "/jobs — очередь тяжёлых задач (брокер)",
+        "/login claude|codex|github|weeek — входы",
       ].join("\n"),
     };
   }

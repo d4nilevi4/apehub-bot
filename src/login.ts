@@ -39,6 +39,11 @@ export class CredStore {
     writeFileSync(`${this.dir}/github-user.json`, JSON.stringify(user), { mode: 0o600 });
   }
 
+  /** Weeek API token (per-user, acts as that user in Weeek) → <dir>/weeek-token */
+  setWeeek(token: string): void {
+    writeFileSync(`${this.dir}/weeek-token`, token, { mode: 0o600 });
+  }
+
   getGithubUser(): { login: string; email: string } | null {
     try {
       return JSON.parse(readFileSync(`${this.dir}/github-user.json`, "utf8"));
@@ -48,7 +53,7 @@ export class CredStore {
   }
 }
 
-export type LoginEngine = "claude" | "codex";
+export type LoginEngine = "claude" | "codex" | "weeek";
 export interface LoginResult {
   ok: boolean;
   message: string;
@@ -64,6 +69,16 @@ const CODEX_INSTRUCTIONS = `🔐 Вход в *Codex*.
 Вариант 2: пришли API-ключ OpenAI \`sk-…\`.
 ⚠️ Сообщение удалю сразу после сохранения. Отмена — /cancel.`;
 
+const WEEEK_INSTRUCTIONS = `🔐 Вход в *Weeek*.
+В Weeek → настройки workspace → раздел *API* → создай токен (под своим аккаунтом) и пришли его сюда.
+Все действия в трекере будут от твоего имени. ⚠️ Сообщение удалю сразу после сохранения. Отмена — /cancel.`;
+
+const INSTRUCTIONS: Record<LoginEngine, string> = {
+  claude: CLAUDE_INSTRUCTIONS,
+  codex: CODEX_INSTRUCTIONS,
+  weeek: WEEEK_INSTRUCTIONS,
+};
+
 /**
  * Tracks a single pending login (one user per bot) and validates/stores whatever
  * credential the user sends next.
@@ -75,7 +90,7 @@ export class LoginManager {
 
   start(engine: LoginEngine, chatId: number, topicId: number): string {
     this.pending = { engine, chatId, topicId };
-    return engine === "claude" ? CLAUDE_INSTRUCTIONS : CODEX_INSTRUCTIONS;
+    return INSTRUCTIONS[engine];
   }
 
   isPending(): boolean {
@@ -106,6 +121,15 @@ export class LoginManager {
           ? "✅ Claude подключён по подписке. Напиши в любой топик — проверим."
           : "✅ Claude подключён по API-ключу. Напиши в любой топик — проверим.",
       };
+    }
+
+    if (p.engine === "weeek") {
+      if (raw.length < 8) {
+        return { ok: false, message: "Это не похоже на токен Weeek. Пришли токен из настроек workspace → API, или /cancel." };
+      }
+      this.store.setWeeek(raw);
+      this.pending = null;
+      return { ok: true, message: "✅ Weeek подключён. Задачи будут от твоего имени." };
     }
 
     // codex
