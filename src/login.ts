@@ -70,8 +70,9 @@ const CODEX_INSTRUCTIONS = `🔐 Вход в *Codex*.
 ⚠️ Сообщение удалю сразу после сохранения. Отмена — /cancel.`;
 
 const WEEEK_INSTRUCTIONS = `🔐 Вход в *Weeek*.
-В Weeek → настройки workspace → раздел *API* → создай токен (под своим аккаунтом) и пришли его сюда.
-Все действия в трекере будут от твоего имени. ⚠️ Сообщение удалю сразу после сохранения. Отмена — /cancel.`;
+1. Открой https://app.weeek.net/ws/555194/settings/api
+2. Создай токен (под своим аккаунтом) и пришли его сюда.
+Все действия в трекере будут от твоего имени. ⚠️ Сообщение с токеном удалю сразу после сохранения. Отмена — /cancel.`;
 
 const INSTRUCTIONS: Record<LoginEngine, string> = {
   claude: CLAUDE_INSTRUCTIONS,
