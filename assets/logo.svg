@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="ApeHub">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#g)"/>
+  <g stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.92">
+    <line x1="64" y1="64" x2="64" y2="30"/>
+    <line x1="64" y1="64" x2="97" y2="84"/>
+    <line x1="64" y1="64" x2="31" y2="84"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="64" cy="64" r="14"/>
+    <circle cx="64" cy="28" r="9"/>
+    <circle cx="97" cy="84" r="9"/>
+    <circle cx="31" cy="84" r="9"/>
+  </g>
+</svg>
