@@ -4,6 +4,10 @@
 export const AUTOCOMPACT_FRACTION = 0.8;
 
 export function fmtK(n: number): string {
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+  }
   return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
 }
 

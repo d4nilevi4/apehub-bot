@@ -51,7 +51,7 @@ test("status shows engine, model and context %", () => {
   const t = cmd.status(10).text;
   expect(t).toContain("Движок: claude");
   expect(t).toContain("claude-opus-4-8");
-  expect(t).toContain("50%"); // 100k of 200k window
+  expect(t).toContain("10%"); // 100k of 1M window
 });
 
 test("switchmodel without arg offers the engine's model buttons", () => {
@@ -72,7 +72,7 @@ test("context reports emptiness, then a filled bar", () => {
   const { db, cmd } = setup({ topicId: 10 });
   expect(cmd.context(10).text).toContain("пуст");
   db.setUsage(10, "opus", 20_000);
-  expect(cmd.context(10).text).toContain("10%"); // 20k/200k
+  expect(cmd.context(10).text).toContain("2%"); // 20k/1M
 });
 
 test("new/reset clears session, seed and usage", () => {

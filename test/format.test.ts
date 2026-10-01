@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import { contextHeader, defaultAutocompactAt, fmtK } from "../src/format";
 
-test("fmtK compacts thousands", () => {
+test("fmtK compacts thousands and millions", () => {
   expect(fmtK(58000)).toBe("58k");
   expect(fmtK(999)).toBe("999");
+  expect(fmtK(1_000_000)).toBe("1M");
+  expect(fmtK(1_500_000)).toBe("1.5M");
 });
 
 test("contextHeader shows used / window (percent) and a 10-cell bar", () => {

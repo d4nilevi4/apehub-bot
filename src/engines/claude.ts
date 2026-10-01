@@ -8,11 +8,17 @@ import type { Engine, EngineCapabilities, RunOptions, RunResult } from "../engin
  */
 export class ClaudeEngine implements Engine {
   readonly name = "claude" as const;
-  readonly capabilities: EngineCapabilities = {
-    // CLI resolves these aliases to the current model ids; full ids also pass through.
-    models: ["opus", "sonnet", "haiku"],
-    contextWindow: () => 200_000,
-  };
+  readonly capabilities: EngineCapabilities;
+
+  // Real model window. Sonnet 5.5 reports 1M via the SDK (getContextUsage → maxTokens).
+  // Override with the CONTEXT_WINDOW env var if a model ever differs.
+  constructor(contextWindow = Number(process.env.CONTEXT_WINDOW) || 1_000_000) {
+    this.capabilities = {
+      // CLI resolves these aliases to the current model ids; full ids also pass through.
+      models: ["opus", "sonnet", "haiku"],
+      contextWindow: () => contextWindow,
+    };
+  }
 
   async run(o: RunOptions): Promise<RunResult> {
     const q = query({
