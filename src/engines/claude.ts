@@ -55,12 +55,26 @@ export class ClaudeEngine implements Engine {
     let isError = false;
     let model: string | undefined;
     let ctxUsed: number | undefined;
+    let accurateCtx = false;
 
     for await (const msg of q as AsyncIterable<Record<string, any>>) {
       o.onActivity?.();
       if (typeof msg.session_id === "string") sessionId = msg.session_id;
       if (msg.type === "system" && msg.subtype === "init") {
         if (typeof msg.model === "string") model = msg.model;
+        // Accurate context occupancy — the same source as Claude Code's /context —
+        // read while the session is live (at the result message the query is already
+        // closing). Replaces the input+cache sum, which adds up every internal model
+        // call in an agentic turn and can balloon past the window (e.g. 13M).
+        try {
+          const cu = await (q as unknown as { getContextUsage?: () => Promise<{ totalTokens?: number }> }).getContextUsage?.();
+          if (cu && typeof cu.totalTokens === "number") {
+            ctxUsed = cu.totalTokens;
+            accurateCtx = true;
+          }
+        } catch {
+          /* fall back to the usage sum at the result message */
+        }
       } else if (msg.type === "assistant") {
         for (const block of msg.message?.content ?? []) {
           if (block?.type === "text" && block.text) await o.onText(block.text);
@@ -68,11 +82,14 @@ export class ClaudeEngine implements Engine {
       } else if (msg.type === "result") {
         isError = msg.subtype !== "success";
         if (typeof msg.result === "string") text = msg.result;
-        // Prompt tokens re-sent next turn ≈ current context occupancy.
-        const u = msg.usage ?? {};
-        const used =
-          (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-        if (used > 0) ctxUsed = used;
+        if (!accurateCtx) {
+          // Fallback only if getContextUsage was unavailable: a rough proxy that
+          // over-counts multi-step turns (sums the prompt of every internal call).
+          const u = msg.usage ?? {};
+          const used =
+            (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+          if (used > 0) ctxUsed = used;
+        }
       }
     }
 
