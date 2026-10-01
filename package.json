@@ -1,0 +1,19 @@
+{
+  "name": "apehub-bot",
+  "version": "0.0.1",
+  "description": "Per-user Telegram bot for the ape-hub platform — forum topics as projects, driving AI coding agents.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "grammy": "^1.30.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/bun": "latest"
+  }
+}
