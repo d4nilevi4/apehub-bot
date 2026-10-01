@@ -9,6 +9,8 @@ export interface Config {
   projectsRoot: string;
   dbPath: string;
   credsDir: string;
+  /** Shared skills/plugins marketplace clone on the server (loaded into every session). */
+  hubDir: string;
   defaultEngine: EngineName;
   model?: string;
   askTimeoutMs: number;
@@ -35,6 +37,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     projectsRoot: env.PROJECTS_ROOT ?? `${dataDir}/projects`,
     dbPath: env.DB_PATH ?? `${dataDir}/apehub.sqlite`,
     credsDir: env.CREDS_DIR ?? `${dataDir}/creds`,
+    hubDir: env.HUB_DIR ?? "/opt/apehub-hub",
     defaultEngine: (env.DEFAULT_ENGINE as EngineName) ?? "claude",
     model: env.MODEL || undefined,
     askTimeoutMs: Number(env.ASK_TIMEOUT_MS) || 10 * 60_000,
@@ -77,6 +80,28 @@ export function resolveSessionEnv(
     else out.ANTHROPIC_API_KEY = cred;
   }
   if (env.ANTHROPIC_BASE_URL) out.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL;
+  return out;
+}
+
+/**
+ * Minimal system env handed to agent subprocesses so their shell finds the normal
+ * tools (git, gh, curl, python3, node…). Carries PATH/HOME/locale from the bot's own
+ * environment but NOT the bot's secrets (BOT_TOKEN) or config (DATA_DIR, …). Without
+ * this the Agent SDK spawns the CLI with only the auth vars and every command is
+ * "not found".
+ */
+export function baseSessionEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const keep = [
+    "HOME", "USER", "LOGNAME", "SHELL", "TZ", "TERM", "TMPDIR",
+    "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE",
+    "XDG_RUNTIME_DIR", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
+  ];
+  const out: Record<string, string> = {};
+  for (const k of keep) {
+    const v = env[k];
+    if (v) out[k] = v;
+  }
+  out.PATH = env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
   return out;
 }
 

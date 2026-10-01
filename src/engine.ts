@@ -20,6 +20,10 @@ export interface RunOptions {
   systemPromptAppend?: string;
   mcpServers?: Record<string, unknown>;
   allowedTools?: string[];
+  /** Local plugin roots (shared skills/plugins hub) to load for this turn. */
+  plugins?: { type: "local"; path: string }[];
+  /** Which hub skills to enable: "all" or explicit names. */
+  skills?: "all" | string[];
   signal?: AbortSignal;
   /** Called on ANY engine event (text, tool use, permission, system) — a liveness
    * heartbeat the session manager uses to tell "working" from "idle/stuck". */

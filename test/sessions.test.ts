@@ -20,6 +20,7 @@ function setup(engine = new FakeEngine(), sleepMs?: number) {
     BOT_TOKEN: "x",
     FORUM_CHAT_ID: "-100",
     DATA_DIR: dir,
+    HUB_DIR: join(dir, "nohub"), // absent → no hub plugins in tests
     ...(sleepMs ? { SLEEP_AFTER_MS: String(sleepMs) } : {}),
   } as any);
   const db = new Db(":memory:");
@@ -42,7 +43,7 @@ function mkProject(db: Db, topicId = 10): Project {
   const p: Project = {
     topicId, name: "proj", engine: "claude", cwd: "/tmp/proj",
     sessionId: null, state: "idle", createdAt: 1, updatedAt: 1,
-    model: null, autocompact: true, seed: null, lastModel: null, ctxUsed: null,
+    model: null, autocompact: true, auto: false, autocompactAt: null, seed: null, lastModel: null, ctxUsed: null,
   };
   db.upsertProject(p);
   return p;
@@ -59,6 +60,14 @@ test("project turn: runs engine, streams text, persists session id", async () =>
   expect(sent.some((m) => m.text.includes("hello from agent"))).toBe(true);
   expect(db.getProject(10)?.sessionId).toBe("sess-1");
   expect(db.getProject(10)?.state).toBe("idle");
+});
+
+test("hub skills are enabled for the session", async () => {
+  const { sm, db, engine } = setup();
+  mkProject(db);
+  await sm.handle(10, "hi");
+  expect(engine.calls[0]!.skills).toBe("all");
+  expect(Array.isArray(engine.calls[0]!.plugins)).toBe(true);
 });
 
 test("second turn resumes the stored session", async () => {
@@ -103,12 +112,23 @@ test("permission requests from the engine reach Telegram and resolve", async () 
   expect(engine.lastDecision).toEqual({ allow: true });
 });
 
+test("auto mode approves tools without a Telegram prompt", async () => {
+  const engine = new FakeEngine();
+  engine.permissionTool = "Bash";
+  const { sm, db, api } = setup(engine);
+  mkProject(db);
+  db.setAuto(10, true);
+  await sm.handle(10, "run a command");
+  expect(api.lastButtonData()).toBeUndefined(); // never asked
+  expect(engine.lastDecision).toEqual({ allow: true });
+});
+
 test("codex project: bails without auth, runs with CODEX_HOME once a key is stored", async () => {
   const { sm, db, engine, sent, config } = setup();
   db.upsertProject({
     topicId: 20, name: "cx", engine: "codex", cwd: "/tmp/cx",
     sessionId: null, state: "idle", createdAt: 1, updatedAt: 1,
-    model: null, autocompact: true, seed: null, lastModel: null, ctxUsed: null,
+    model: null, autocompact: true, auto: false, autocompactAt: null, seed: null, lastModel: null, ctxUsed: null,
   });
   await sm.handle(20, "hi");
   expect(engine.calls).toHaveLength(0);
@@ -156,6 +176,28 @@ test("autocompact triggers a summary + reseed when the window is nearly full", a
   expect(engine.calls).toHaveLength(2); // the turn + the auto summary
   expect(db.getProject(10)?.seed).toBeTruthy();
   expect(db.getProject(10)?.sessionId).toBeNull();
+});
+
+test("autocompact respects a custom token threshold", async () => {
+  const engine = new FakeEngine();
+  engine.window = 200_000;
+  engine.nextCtxUsed = 120_000; // below default 160k, above custom 100k
+  const { sm, db } = setup(engine);
+  mkProject(db);
+  db.setAutocompactAt(10, 100_000);
+  await sm.handle(10, "go");
+  expect(engine.calls).toHaveLength(2); // turn + auto summary
+  expect(db.getProject(10)?.seed).toBeTruthy();
+});
+
+test("each reply is prefixed with the context header", async () => {
+  const engine = new FakeEngine();
+  engine.window = 200_000;
+  const { sm, db, sent } = setup(engine);
+  mkProject(db);
+  await sm.handle(10, "hi");
+  expect(sent[0]!.text).toContain("200k");
+  expect(sent[0]!.text).toContain("hello from agent");
 });
 
 test("compact summarizes the session and reseeds", async () => {

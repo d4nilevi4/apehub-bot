@@ -1,5 +1,14 @@
 import { expect, test } from "bun:test";
-import { weeekRequest } from "../src/weeek";
+import { clean, weeekRequest } from "../src/weeek";
+
+test("clean drops only undefined fields (keeps null/empty/falsy)", () => {
+  expect(clean({ title: "x", projectId: 6, description: undefined, assignees: [], dueDate: null })).toEqual({
+    title: "x",
+    projectId: 6,
+    assignees: [],
+    dueDate: null,
+  });
+});
 
 function fakeFetch(res: { ok: boolean; status: number; body: string }, spy?: (url: string, opts: any) => void) {
   return (async (url: string, opts: any) => {

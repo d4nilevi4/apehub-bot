@@ -77,8 +77,10 @@ bot.start({
 });
 
 const stop = () => {
+  // Do NOT close the DB here: an in-flight turn may still write to it during
+  // shutdown ("Cannot use a closed database"). WAL-sqlite is durable per-commit;
+  // the OS closes the fd on exit. Just stop polling.
   console.log("shutting down…");
-  db.close();
   void bot.stop();
 };
 process.once("SIGINT", stop);

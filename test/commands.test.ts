@@ -9,7 +9,7 @@ function base(over: Partial<Project>): Project {
   return {
     topicId: 10, name: "proj", engine: "claude", cwd: "/tmp/p",
     sessionId: null, state: "idle", createdAt: 1, updatedAt: 1,
-    model: null, autocompact: true, seed: null, lastModel: null, ctxUsed: null,
+    model: null, autocompact: true, auto: false, autocompactAt: null, seed: null, lastModel: null, ctxUsed: null,
     ...over,
   };
 }
@@ -101,6 +101,24 @@ test("autocompact toggles and reports", () => {
   expect(db.getProject(10)?.autocompact).toBe(true);
 });
 
+test("autocompact accepts a token threshold, and on resets it to default", () => {
+  const { db, cmd } = setup({ topicId: 10 });
+  expect(cmd.autocompact(10, "150k").text).toContain("150k");
+  expect(db.getProject(10)?.autocompact).toBe(true);
+  expect(db.getProject(10)?.autocompactAt).toBe(150000);
+  cmd.autocompact(10, "on");
+  expect(db.getProject(10)?.autocompactAt).toBeNull();
+});
+
+test("auto toggles and reports", () => {
+  const { db, cmd } = setup({ topicId: 10 });
+  expect(cmd.auto(10).text).toContain("выкл"); // default off
+  cmd.auto(10, "on");
+  expect(db.getProject(10)?.auto).toBe(true);
+  cmd.auto(10, "off");
+  expect(db.getProject(10)?.auto).toBe(false);
+});
+
 test("engine switch clears session; General stays claude", () => {
   const { db, cmd } = setup({ topicId: 10, sessionId: "s1", engine: "claude" });
   expect(cmd.engine(10, "codex").text).toContain("codex");
@@ -126,6 +144,11 @@ test("status reflects working vs idle state", () => {
 test("sleep interrupts an active turn, reassures when idle", () => {
   expect(setup({ topicId: 10 }, true).cmd.sleep(10).text).toContain("Усыпляю");
   expect(setup({ topicId: 10 }, false).cmd.sleep(10).text).toContain("простаивает");
+});
+
+test("skills reports an empty/absent hub", () => {
+  const { cmd } = setup({ topicId: 10 });
+  expect(cmd.skills().text).toContain("пуст");
 });
 
 test("jobs lists the broker queue", () => {

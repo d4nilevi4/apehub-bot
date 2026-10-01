@@ -1,11 +1,13 @@
 import { mkdirSync } from "node:fs";
 import type { Bridge } from "./bridge";
 import { Broker, makeBrokerServer } from "./broker";
-import { hasCodexAuth, hasWeeek, resolveCodexEnv, resolveGithubEnv, resolveSessionEnv, type Config, type EngineName } from "./config";
+import { baseSessionEnv, hasCodexAuth, hasWeeek, resolveCodexEnv, resolveGithubEnv, resolveSessionEnv, type Config, type EngineName } from "./config";
 import { makeCommsServer } from "./comms";
 import { ASSISTANT_CONTRACT, GENERAL_TOPIC_ID, TELEGRAM_CONTRACT } from "./constants";
 import type { Db, Project } from "./db";
 import type { Engine } from "./engine";
+import { contextHeader, defaultAutocompactAt } from "./format";
+import { listHubPlugins } from "./hub";
 import { makeWeeekServer, WEEEK_TOOLS } from "./weeek";
 
 export interface SessionDeps {
@@ -31,10 +33,8 @@ const SAFE_TOOLS = [
   "Read",
   "Glob",
   "Grep",
+  "Skill", // invoking a hub skill just loads its instructions; its actions still prompt
 ];
-
-/** Fraction of the context window at which auto-compact kicks in. */
-const AUTOCOMPACT_AT = 0.8;
 
 const SUMMARY_PROMPT =
   "Summarize our conversation so far so a fresh session can continue seamlessly: the goal, what has been done, key files/commands, decisions made, current state, and the next steps. Be thorough but compact. Output only the summary.";
@@ -108,14 +108,14 @@ export class SessionManager {
         void this.deps.send(topicId, "🔑 Не вошёл в Codex. Набери /login codex.");
         return null;
       }
-      return { ...resolveCodexEnv(config.credsDir), ...git };
+      return { ...baseSessionEnv(), ...resolveCodexEnv(config.credsDir), ...git };
     }
     const env = resolveSessionEnv(process.env, config.credsDir);
     if (!env.ANTHROPIC_API_KEY && !env.CLAUDE_CODE_OAUTH_TOKEN) {
       void this.deps.send(topicId, "🔑 Не вошёл в модель. Набери /login claude (или /login codex).");
       return null;
     }
-    return { ...env, ...git };
+    return { ...baseSessionEnv(), ...env, ...git };
   }
 
   private modelFor(project: Project): string | undefined {
@@ -157,12 +157,14 @@ export class SessionManager {
     const bump = () => {
       lastActivity = Date.now();
     };
+    // Prefix each reply with the current context occupancy (as of the last turn).
+    const ctxHead = () => contextHeader(project.ctxUsed, engine.capabilities.contextWindow(project.lastModel ?? model));
     const onText = async (t: string) => {
       bump();
-      if (t.trim()) {
-        sentAny = true;
-        await this.deps.send(topicId, t);
-      }
+      if (!t.trim()) return;
+      sentAny = true;
+      const h = ctxHead();
+      await this.deps.send(topicId, h ? `${h}\n\n${t}` : t);
     };
 
     const ac = new AbortController();
@@ -188,11 +190,15 @@ export class SessionManager {
         systemPromptAppend: isGeneral ? ASSISTANT_CONTRACT : TELEGRAM_CONTRACT,
         mcpServers,
         allowedTools: SAFE_TOOLS,
+        plugins: listHubPlugins(config.hubDir), // shared skills/plugins marketplace
+        skills: "all",
         signal: ac.signal,
         onActivity: bump,
         onText,
         onPermission: (req) => {
           bump();
+          // /auto on → approve everything without a Telegram prompt.
+          if (project.auto) return Promise.resolve({ allow: true });
           return this.deps.bridge.requestPermission(topicId, req);
         },
       });
@@ -202,12 +208,16 @@ export class SessionManager {
       if (sleptByIdle) {
         await this.deps.send(topicId, "😴 Усыпил сессию — агент простаивал без активности. Контекст сохранён, напиши — продолжу.");
       } else if (!ac.signal.aborted) {
-        db.setUsage(topicId, res.model ?? project.lastModel, res.ctxUsed ?? project.ctxUsed);
-        if (!sentAny && res.text) await this.deps.send(topicId, res.text);
-
-        // Auto-compact when the window is nearly full (only if we know the window).
         const win = engine.capabilities.contextWindow(res.model ?? model);
-        if (project.autocompact && !res.isError && res.sessionId && res.ctxUsed && win && res.ctxUsed / win >= AUTOCOMPACT_AT) {
+        db.setUsage(topicId, res.model ?? project.lastModel, res.ctxUsed ?? project.ctxUsed);
+        if (!sentAny && res.text) {
+          const h = contextHeader(res.ctxUsed ?? project.ctxUsed, win);
+          await this.deps.send(topicId, h ? `${h}\n\n${res.text}` : res.text);
+        }
+
+        // Auto-compact once context reaches the threshold (per-project tokens, else 80% of window).
+        const threshold = project.autocompactAt ?? defaultAutocompactAt(win);
+        if (project.autocompact && !res.isError && res.sessionId && res.ctxUsed && threshold && res.ctxUsed >= threshold) {
           await this.deps.send(topicId, "🗜 Контекст почти полон — сжимаю историю…");
           await this.doCompact(topicId, { ...project, sessionId: res.sessionId }, env, res.sessionId);
         }
@@ -262,6 +272,8 @@ export function ensureGeneral(db: Db, config: Config): Project {
     updatedAt: now,
     model: null,
     autocompact: true,
+    auto: false,
+    autocompactAt: null,
     seed: null,
     lastModel: null,
     ctxUsed: null,

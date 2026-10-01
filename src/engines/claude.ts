@@ -24,7 +24,10 @@ export class ClaudeEngine implements Engine {
         model: o.model,
         permissionMode: "default",
         // Do not read danil's ~/.claude or project CLAUDE.md: sessions stay isolated.
+        // The shared skills hub is injected explicitly via `plugins`, not settingSources.
         settingSources: [],
+        ...(o.plugins?.length ? { plugins: o.plugins } : {}),
+        ...(o.skills ? { skills: o.skills } : {}),
         allowedTools: o.allowedTools,
         mcpServers: o.mcpServers as never,
         systemPrompt: o.systemPromptAppend

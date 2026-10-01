@@ -21,11 +21,13 @@ export const BOT_COMMANDS = [
   { command: "switchmodel", description: "сменить модель (без имени — кнопки)" },
   { command: "engine", description: "сменить движок проекта: claude | codex" },
   { command: "compact", description: "сжать историю (резюме → новая сессия)" },
-  { command: "autocompact", description: "авто-сжатие: on | off" },
+  { command: "autocompact", description: "авто-сжатие: on | off | <токены>" },
+  { command: "auto", description: "выполнять команды без запроса: on | off" },
   { command: "new", description: "начать новую сессию" },
   { command: "sleep", description: "усыпить сессию вручную" },
   { command: "stop", description: "прервать текущий ответ" },
   { command: "jobs", description: "очередь тяжёлых задач (брокер)" },
+  { command: "skills", description: "доступные скилы маркетплейса" },
   { command: "login", description: "вход: claude | codex | github | weeek" },
   { command: "cancel", description: "отменить ввод логина" },
   { command: "help", description: "список команд" },
@@ -57,10 +59,12 @@ export function registerHandlers(bot: Bot, config: Config, deps: Handlers): void
   bot.command("switchmodel", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.switchModel(topicOf(ctx), ctx.match)));
   bot.command("engine", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.engine(topicOf(ctx), ctx.match)));
   bot.command("autocompact", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.autocompact(topicOf(ctx), ctx.match)));
+  bot.command("auto", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.auto(topicOf(ctx), ctx.match)));
   bot.command("new", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.reset(topicOf(ctx))));
   bot.command("sleep", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.sleep(topicOf(ctx))));
   bot.command("stop", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.stop(topicOf(ctx))));
   bot.command("jobs", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.jobs()));
+  bot.command("skills", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.skills()));
   bot.command("help", (ctx) => sendReply(ctx, topicOf(ctx), deps.commands.help()));
   bot.command("compact", (ctx) => {
     const r = deps.commands.compact(topicOf(ctx));

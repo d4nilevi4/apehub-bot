@@ -48,6 +48,8 @@ export async function createProject(
     updatedAt: now,
     model: null,
     autocompact: true,
+    auto: false,
+    autocompactAt: null,
     seed: null,
     lastModel: null,
     ctxUsed: null,

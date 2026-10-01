@@ -45,7 +45,7 @@ test("listProjects hides archived and the General row", async () => {
   db.upsertProject({
     topicId: 0, name: "General", engine: "claude", cwd: "/tmp/g",
     sessionId: null, state: "idle", createdAt: 1, updatedAt: 1,
-    model: null, autocompact: true, seed: null, lastModel: null, ctxUsed: null,
+    model: null, autocompact: true, auto: false, autocompactAt: null, seed: null, lastModel: null, ctxUsed: null,
   });
   await archiveProject(ctx, b.topicId);
   const names = listProjects(ctx).map((p) => p.name);

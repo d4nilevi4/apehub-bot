@@ -16,6 +16,10 @@ export interface Project {
   model: string | null;
   /** Auto-compact (summarize + reseed) when the context window fills. */
   autocompact: boolean;
+  /** Auto-approve tool/permission requests (no Telegram buttons) for this topic. */
+  auto: boolean;
+  /** Token threshold at which auto-compact fires (null = default 80% of the window). */
+  autocompactAt: number | null;
   /** Pending summary to prepend to the next message (set by compact). */
   seed: string | null;
   /** Actual model the engine reported on the last turn. */
@@ -27,6 +31,8 @@ export interface Project {
 const COLUMNS: Record<string, string> = {
   model: "TEXT",
   autocompact: "INTEGER NOT NULL DEFAULT 1",
+  auto: "INTEGER NOT NULL DEFAULT 0",
+  autocompact_at: "INTEGER",
   seed: "TEXT",
   last_model: "TEXT",
   ctx_used: "INTEGER",
@@ -50,6 +56,8 @@ export class Db {
         updated_at INTEGER NOT NULL,
         model      TEXT,
         autocompact INTEGER NOT NULL DEFAULT 1,
+        auto       INTEGER NOT NULL DEFAULT 0,
+        autocompact_at INTEGER,
         seed       TEXT,
         last_model TEXT,
         ctx_used   INTEGER
@@ -71,16 +79,16 @@ export class Db {
   upsertProject(p: Project): void {
     this.db
       .query(
-        `INSERT INTO projects (topic_id, name, engine, cwd, session_id, state, created_at, updated_at, model, autocompact, seed, last_model, ctx_used)
-         VALUES ($t, $n, $e, $c, $s, $st, $ca, $ua, $m, $ac, $sd, $lm, $cu)
+        `INSERT INTO projects (topic_id, name, engine, cwd, session_id, state, created_at, updated_at, model, autocompact, auto, autocompact_at, seed, last_model, ctx_used)
+         VALUES ($t, $n, $e, $c, $s, $st, $ca, $ua, $m, $ac, $au, $aca, $sd, $lm, $cu)
          ON CONFLICT(topic_id) DO UPDATE SET
            name=$n, engine=$e, cwd=$c, session_id=$s, state=$st, updated_at=$ua,
-           model=$m, autocompact=$ac, seed=$sd, last_model=$lm, ctx_used=$cu`,
+           model=$m, autocompact=$ac, auto=$au, autocompact_at=$aca, seed=$sd, last_model=$lm, ctx_used=$cu`,
       )
       .run({
         $t: p.topicId, $n: p.name, $e: p.engine, $c: p.cwd, $s: p.sessionId,
         $st: p.state, $ca: p.createdAt, $ua: p.updatedAt, $m: p.model,
-        $ac: p.autocompact ? 1 : 0, $sd: p.seed, $lm: p.lastModel, $cu: p.ctxUsed,
+        $ac: p.autocompact ? 1 : 0, $au: p.auto ? 1 : 0, $aca: p.autocompactAt, $sd: p.seed, $lm: p.lastModel, $cu: p.ctxUsed,
       });
   }
 
@@ -116,6 +124,12 @@ export class Db {
   setAutocompact(topicId: number, on: boolean): void {
     this.set(topicId, "autocompact", on ? 1 : 0);
   }
+  setAuto(topicId: number, on: boolean): void {
+    this.set(topicId, "auto", on ? 1 : 0);
+  }
+  setAutocompactAt(topicId: number, tokens: number | null): void {
+    this.set(topicId, "autocompact_at", tokens);
+  }
   setSeed(topicId: number, seed: string | null): void {
     this.set(topicId, "seed", seed);
   }
@@ -144,6 +158,8 @@ function rowToProject(r: unknown): Project {
     updatedAt: Number(o.updated_at),
     model: (o.model as string | null) ?? null,
     autocompact: Number(o.autocompact ?? 1) !== 0,
+    auto: Number(o.auto ?? 0) !== 0,
+    autocompactAt: o.autocompact_at == null ? null : Number(o.autocompact_at),
     seed: (o.seed as string | null) ?? null,
     lastModel: (o.last_model as string | null) ?? null,
     ctxUsed: o.ctx_used == null ? null : Number(o.ctx_used),

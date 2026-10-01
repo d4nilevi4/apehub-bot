@@ -3,6 +3,8 @@ import type { Config, EngineName } from "./config";
 import { GENERAL_TOPIC_ID } from "./constants";
 import type { Db, Project } from "./db";
 import type { Engine } from "./engine";
+import { bar, defaultAutocompactAt, fmtK } from "./format";
+import { listHubSkills } from "./hub";
 
 export interface Button {
   text: string;
@@ -55,7 +57,8 @@ export class Commands {
         `Модель: ${model}`,
         `Сессия: ${session}`,
         `Контекст: ${this.ctxLine(p)}`,
-        `Автокомпакт: ${p.autocompact ? "вкл" : "выкл"}`,
+        `Автокомпакт: ${this.autocompactLine(p)}`,
+        `Авто-подтверждение: ${p.auto ? "вкл (без запроса)" : "выкл (спрашиваю)"}`,
         `GitHub: ${this.creds.getGithubUser()?.login ?? "не подключён (/login github)"}`,
         `Weeek: ${this.creds.hasWeeek() ? "подключён" : "не подключён (/login weeek)"}`,
       ].join("\n"),
@@ -122,19 +125,49 @@ export class Commands {
     return null;
   }
 
+  /** /autocompact off | on | <tokens> — set whether & at what context size history auto-compacts. */
   autocompact(topicId: number, arg?: string): CmdReply {
     const p = this.proj(topicId);
     if (!p) return NOT_LINKED;
     const a = (arg ?? "").trim().toLowerCase();
-    if (a === "on" || a === "вкл") {
-      this.db.setAutocompact(topicId, true);
-      return { text: "✅ Автокомпакт включён." };
+    if (a === "") {
+      return {
+        text: `Автокомпакт сейчас: *${this.autocompactLine(p)}*.\nМеняй: \`/autocompact off\` · \`/autocompact on\` · \`/autocompact 150000\` (порог в токенах).`,
+      };
     }
     if (a === "off" || a === "выкл") {
       this.db.setAutocompact(topicId, false);
-      return { text: "✅ Автокомпакт выключен." };
+      return { text: "✅ Автокомпакт выключен — историю сам сжимать не буду (есть /compact вручную)." };
     }
-    return { text: `Автокомпакт сейчас: *${p.autocompact ? "вкл" : "выкл"}*. Переключить: \`/autocompact on\` | \`/autocompact off\`` };
+    if (a === "on" || a === "вкл") {
+      this.db.setAutocompact(topicId, true);
+      this.db.setAutocompactAt(topicId, null);
+      const thr = defaultAutocompactAt(this.windowFor(p));
+      return { text: `✅ Автокомпакт включён${thr ? ` (порог по умолчанию — ${fmtK(thr)} токенов)` : ""}.` };
+    }
+    const n = parseTokens(a);
+    if (n && n > 0) {
+      this.db.setAutocompact(topicId, true);
+      this.db.setAutocompactAt(topicId, n);
+      return { text: `✅ Автокомпакт включён, порог *${fmtK(n)}* токенов.` };
+    }
+    return { text: "Не понял. Примеры: `/autocompact off` · `/autocompact on` · `/autocompact 150000` · `/autocompact 150k`" };
+  }
+
+  /** Auto-approve: run tools/commands without a Telegram confirmation button. Per topic. */
+  auto(topicId: number, arg?: string): CmdReply {
+    const p = this.proj(topicId);
+    if (!p) return NOT_LINKED;
+    const a = (arg ?? "").trim().toLowerCase();
+    if (a === "on" || a === "вкл") {
+      this.db.setAuto(topicId, true);
+      return { text: "✅ Авто-режим включён — команды выполняются без запроса. Выключить: `/auto off`" };
+    }
+    if (a === "off" || a === "выкл") {
+      this.db.setAuto(topicId, false);
+      return { text: "✅ Авто-режим выключен — снова буду спрашивать перед командами." };
+    }
+    return { text: `Авто-режим сейчас: *${p.auto ? "вкл" : "выкл"}*. Переключить: \`/auto on\` | \`/auto off\`` };
   }
 
   engine(topicId: number, arg?: string): CmdReply {
@@ -160,6 +193,21 @@ export class Commands {
     return { text: `✅ Движок: *${name}*. Сессия сброшена (у движков разный формат истории).` };
   }
 
+  /** List the skills available from the shared marketplace (hub). All are active in every session. */
+  skills(): CmdReply {
+    const list = listHubSkills(this.config.hubDir);
+    if (!list.length) {
+      return { text: "🧩 Маркетплейс скилов пуст или не подключён на сервере." };
+    }
+    const lines = list.map((s) => {
+      const d = s.description.length > 90 ? `${s.description.slice(0, 90)}…` : s.description;
+      return `• *${s.plugin}:${s.name}*${d ? ` — ${d}` : ""}`;
+    });
+    return {
+      text: `🧩 *Скилы маркетплейса ApeHub* (${list.length}, активны во всех сессиях):\n${lines.join("\n")}`,
+    };
+  }
+
   jobs(): CmdReply {
     const js = this.broker.list();
     if (!js.length) return { text: "🏗 Очередь брокера пуста." };
@@ -178,10 +226,12 @@ export class Commands {
         "/engine [claude|codex] — сменить движок проекта",
         "/compact — сжать историю (резюме → новая сессия)",
         "/autocompact on|off — авто-сжатие при заполнении",
+        "/auto on|off — выполнять команды без запроса",
         "/new — начать новую сессию",
         "/sleep — усыпить сессию вручную",
         "/stop — прервать текущий ответ",
         "/jobs — очередь тяжёлых задач (брокер)",
+        "/skills — доступные скилы маркетплейса",
         "/login claude|codex|github|weeek — входы",
       ].join("\n"),
     };
@@ -205,13 +255,21 @@ export class Commands {
     const win = this.windowFor(p);
     return win ? `${fmtK(p.ctxUsed)}/${fmtK(win)} (${Math.round((p.ctxUsed / win) * 100)}%)` : `${fmtK(p.ctxUsed)} токенов`;
   }
+
+  private autocompactLine(p: Project): string {
+    if (!p.autocompact) return "выкл";
+    const thr = p.autocompactAt ?? defaultAutocompactAt(this.windowFor(p));
+    return thr ? `вкл (порог ${fmtK(thr)})` : "вкл";
+  }
 }
 
-function fmtK(n: number): string {
-  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
-}
-
-function bar(pct: number): string {
-  const filled = Math.max(0, Math.min(10, Math.round(pct / 10)));
-  return "▰".repeat(filled) + "▱".repeat(10 - filled);
+/** "150000", "150k", "150к" → 150000. null if not a token count. */
+function parseTokens(s: string): number | null {
+  const m = /^(\d+(?:[.,]\d+)?)\s*([kкmм]?)$/.exec(s.trim());
+  if (!m) return null;
+  let n = parseFloat(m[1]!.replace(",", "."));
+  const suf = m[2]!.toLowerCase();
+  if (suf === "k" || suf === "к") n *= 1000;
+  else if (suf === "m" || suf === "м") n *= 1_000_000;
+  return Math.round(n);
 }
