@@ -101,9 +101,9 @@ The message carrying a token is deleted right after it's stored; credentials liv
 
 Available in Claude sessions after `/login weeek`; every action acts as the token owner:
 
-`list_projects` · `list_members` · `list_boards` · `list_board_columns` · `create_board` ·
-`list_tasks` · `create_task` (board/column, assignees, due date) · `update_task` (assign / re-date /
-move / close) · `complete_task`.
+- **Navigate** — `list_projects` · `list_members` · `list_boards` · `list_board_columns` · `list_tags` · `list_tasks` · `list_comments`
+- **Create / change** — `create_board` · `create_task` (board/column, assignees, due date, priority, tags, subtask via `parentId`) · `update_task` (assign / re-date / move / priority / tags / custom fields / close) · `complete_task`
+- **Collaborate** — `add_comment` (markdown) · `log_time` (minutes)
 
 ## Configuration
 

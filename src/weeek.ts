@@ -132,6 +132,9 @@ export function makeWeeekServer(credsDir: string, base: string = WEEEK_DEFAULT_B
           boardColumnId: z.number().optional().describe("Column on that board"),
           assignees: z.array(z.string()).optional().describe("Member ids to assign"),
           dueDate: z.string().optional().describe("Due date, YYYY-MM-DD"),
+          parentId: z.number().optional().describe("Parent task id → creates a subtask"),
+          priority: z.number().optional().describe("Priority level 0–3"),
+          tags: z.array(z.number()).optional().describe("Tag ids from weeek_list_tags"),
         },
         async (a) => {
           const j = await call(
@@ -145,6 +148,9 @@ export function makeWeeekServer(credsDir: string, base: string = WEEEK_DEFAULT_B
               boardColumnId: a.boardColumnId,
               assignees: a.assignees,
               dueDate: a.dueDate,
+              parentId: a.parentId,
+              priority: a.priority,
+              tags: a.tags,
             }),
           );
           return asText(`Создана задача: ${JSON.stringify(j.task ?? j).slice(0, 500)}`);
@@ -162,6 +168,12 @@ export function makeWeeekServer(credsDir: string, base: string = WEEEK_DEFAULT_B
           dueDate: z.string().optional().describe("Due date, YYYY-MM-DD"),
           boardColumnId: z.number().optional(),
           isCompleted: z.boolean().optional(),
+          priority: z.number().optional().describe("Priority level 0–3"),
+          tags: z.array(z.number()).optional().describe("Tag ids from weeek_list_tags (replaces the list)"),
+          customFields: z
+            .array(z.object({ id: z.string(), value: z.string() }))
+            .optional()
+            .describe("Set custom-field values; value format depends on the field type (text=string, select=option id)"),
         },
         async (a) => {
           const { taskId, assignees, ...rest } = a;
@@ -177,6 +189,51 @@ export function makeWeeekServer(credsDir: string, base: string = WEEEK_DEFAULT_B
             done.push(`assignees=${JSON.stringify(j.task?.assignees ?? j.assignees ?? assignees)}`);
           }
           return asText(`Обновлено: ${done.join(" | ") || "(нет полей для изменения)"}`);
+        },
+      ),
+
+      tool("weeek_list_tags", "List workspace tags (id, title) — pass a tag id to a task's `tags`.", {}, async () => {
+        const j = await call("GET", "/ws/tags");
+        const tags = (Array.isArray(j.tags) ? j.tags : []).map((t: any) => ({ id: t.id, title: t.title }));
+        return asText(JSON.stringify(tags).slice(0, 1800));
+      }),
+
+      tool(
+        "weeek_list_comments",
+        "List a task's comments.",
+        { taskId: z.number().describe("Task id") },
+        async (a) => {
+          const j = await call("GET", `/tm/tasks/${a.taskId}/comments`);
+          return asText(JSON.stringify(j.comments ?? j).slice(0, 2500));
+        },
+      ),
+
+      tool(
+        "weeek_add_comment",
+        "Add a comment to a task (markdown).",
+        { taskId: z.number().describe("Task id"), markdown: z.string().describe("Comment body (markdown)") },
+        async (a) => {
+          const j = await call("POST", `/tm/tasks/${a.taskId}/comments`, { markdown: a.markdown });
+          return asText(`Комментарий добавлен: ${JSON.stringify(j.comment ?? j).slice(0, 300)}`);
+        },
+      ),
+
+      tool(
+        "weeek_log_time",
+        "Log a time entry on a task. `duration` is in minutes; `userId` comes from weeek_list_members.",
+        {
+          taskId: z.number().describe("Task id"),
+          userId: z.string().describe("Member id (whose time this is)"),
+          date: z.string().describe("Date, YYYY-MM-DD"),
+          duration: z.number().describe("Minutes spent"),
+        },
+        async (a) => {
+          const j = await call("POST", `/tm/tasks/${a.taskId}/time-entries`, {
+            userId: a.userId,
+            date: a.date,
+            duration: a.duration,
+          });
+          return asText(`Время записано: ${JSON.stringify(j.data ?? j).slice(0, 300)}`);
         },
       ),
 
@@ -202,5 +259,9 @@ export const WEEEK_TOOLS = [
   "mcp__weeek__weeek_list_tasks",
   "mcp__weeek__weeek_create_task",
   "mcp__weeek__weeek_update_task",
+  "mcp__weeek__weeek_list_tags",
+  "mcp__weeek__weeek_list_comments",
+  "mcp__weeek__weeek_add_comment",
+  "mcp__weeek__weeek_log_time",
   "mcp__weeek__weeek_complete_task",
 ];
