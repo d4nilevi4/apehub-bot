@@ -5,8 +5,8 @@
 <h1 align="center">🦍 ApeHub Bot</h1>
 
 <p align="center">
-  Персональный Telegram-бот для AI-кодинга: один инстанс на коллегу, форум-супергруппа
-  как рабочее пространство, <b>каждый топик = проект</b> со своей AI-сессией.
+  A per-user Telegram bot for AI coding: one instance per teammate, a forum supergroup
+  as the workspace, and <b>every topic = a project</b> with its own AI session.
 </p>
 
 <p align="center">
@@ -19,144 +19,144 @@
 
 ---
 
-## Что это
+## What it is
 
-Бот превращает Telegram-форум в пульт для AI-агентов. Пишешь в топик — просыпается сессия
-соответствующего проекта (Claude или Codex), работает в своей рабочей папке, задаёт вопросы и
-просит разрешения прямо в чате кнопками. Простаивает — засыпает (0 RAM), контекст сохранён на диске.
-Один сервер держит несколько **изолированных** инстансов — по одному на человека.
+The bot turns a Telegram forum into a console for AI agents. Message a topic and the matching
+project's session wakes up (Claude or Codex), works in its own directory, and asks questions or
+requests permissions right in the chat via buttons. When idle it sleeps (0 RAM) with its context
+saved to disk. One server runs several **isolated** instances — one per person.
 
 ```mermaid
 flowchart LR
-  U["👤 Коллега"] -->|"топик = проект"| F["Forum supergroup"]
+  U["👤 Teammate"] -->|"topic = project"| F["Forum supergroup"]
   F --> B["apehub-bot · grammY"]
   B --> SM["SessionManager<br/>(cold-resume, watchdog)"]
   SM --> E{"Engine"}
   E -->|claude| CA["Claude Agent SDK"]
   E -->|codex| CX["Codex CLI (exec --json)"]
-  SM --> M["MCP-серверы:<br/>comms · weeek · broker · skills hub"]
-  B -. "✅/⛔ кнопки, вопросы" .-> U
+  SM --> M["MCP servers:<br/>comms · weeek · broker · skills hub"]
+  B -. "✅/⛔ buttons, questions" .-> U
 ```
 
-## Возможности
+## Features
 
-- 🧠 **Два движка, один интерфейс.** `claude` (Claude Agent SDK) и `codex` (ChatGPT/Codex CLI) за
-  единым `Engine`-швом. Команды универсальны — бот сам понимает, какой движок открыт в топике.
-- 💬 **Ничего не висит в терминале.** Вопросы агента приходят как сообщения (`ask_user`), а запросы
-  на инструменты — как inline-кнопки ✅/⛔ (`canUseTool`). Есть `/auto` — авто-подтверждение.
-- 🔑 **Вход через бота** (`/login`), без перезапуска: токены читаются на лету. Подписка **или**
-  API-ключ определяются автоматически по префиксу.
-- 🧩 **Хаб скилов/плагинов.** Общий git-маркетплейс грузится в каждую сессию (`options.plugins`);
-  `/skills` показывает каталог. Люди подключают тот же репо через `/plugin marketplace add`.
-- 📋 **Weeek per-user.** Проекты, доски, колонки, задачи, исполнители, сроки — от имени твоего токена.
-- 🏗 **Брокер тяжёлых задач.** Долгие джобы (сборки, рендеры) уходят в очередь с лимитами
-  (`systemd-run --user`), агент не блокируется — `/jobs`.
-- 😴 **Тёплые/холодные сессии.** Cold-resume по `session_id`; watchdog усыпляет **только** простаивающий
-  ход и никогда — работающий агент. Ручной `/sleep`.
-- 📊 **Точный контекст.** Шапка `🧮 58k / 1M (6%) ▰▰▱…` в каждом ответе, из того же источника, что
-  `/context` в Claude Code (`getContextUsage`). Авто-компакт с настраиваемым порогом (`/autocompact`).
-- 🐙 **GitHub per-user.** Device-flow логин; git-операции и авторство коммитов — от имени вошедшего.
+- 🧠 **Two engines, one interface.** `claude` (Claude Agent SDK) and `codex` (ChatGPT/Codex CLI)
+  behind a single `Engine` seam. Commands are universal — the bot knows which engine a topic runs.
+- 💬 **Nothing blocks on a terminal.** The agent's questions arrive as messages (`ask_user`); tool
+  requests arrive as inline ✅/⛔ buttons (`canUseTool`). `/auto` flips on auto-approval.
+- 🔑 **Login through the bot** (`/login`), no restart: credentials are read fresh. Subscription
+  **or** API key is auto-detected by prefix.
+- 🧩 **Skills / plugins hub.** A shared git marketplace is loaded into every session
+  (`options.plugins`); `/skills` lists the catalog. Humans add the same repo via `/plugin marketplace add`.
+- 📋 **Per-user Weeek.** Projects, boards, columns, tasks, assignees, due dates — all acting as your token.
+- 🏗 **Heavy-task broker.** Long jobs (builds, renders) go to a capped queue
+  (`systemd-run --user`) so the agent never blocks — `/jobs`.
+- 😴 **Warm / cold sessions.** Cold-resume by `session_id`; the watchdog sleeps **only** a truly idle
+  turn and never a working agent. Manual `/sleep`.
+- 📊 **Accurate context.** A `🧮 58k / 1M (6%) ▰▰▱…` header on every reply, from the same source as
+  Claude Code's `/context` (`getContextUsage`). Auto-compaction with a configurable threshold (`/autocompact`).
+- 🐙 **Per-user GitHub.** Device-flow login; git operations and commit authorship act as the signed-in user.
 
-## Команды
+## Commands
 
-Видны в меню Telegram (`/`). Работают для текущего движка топика.
+Shown in Telegram's `/` menu. They act on the current topic's engine.
 
-| Команда | Что делает |
+| Command | What it does |
 |---|---|
-| `/status` | движок, модель, сессия, контекст %, автокомпакт, авто-режим, GitHub/Weeek |
-| `/context` | заполнение окна контекста |
-| `/switchmodel [имя]` | сменить модель (без имени — кнопки-пикер) |
-| `/engine [claude\|codex]` | сменить движок проекта |
-| `/compact` | сжать историю: резюме → свежая сессия |
-| `/autocompact on\|off\|<токены>` | авто-сжатие и его порог (напр. `/autocompact 150k`) |
-| `/auto on\|off` | выполнять команды без запроса разрешения |
-| `/skills` | каталог скилов из маркетплейса |
-| `/jobs` | очередь тяжёлых задач (брокер) |
-| `/new` | начать новую сессию |
-| `/sleep` | усыпить сессию вручную |
-| `/stop` | прервать текущий ответ |
-| `/login …` | входы (см. ниже) · `/cancel` — отменить ввод |
-| `/help` · `/ping` | справка · проверка связи |
+| `/status` | engine, model, session, context %, autocompact, auto-mode, GitHub/Weeek |
+| `/context` | context-window occupancy |
+| `/switchmodel [name]` | switch model (no name → picker buttons) |
+| `/engine [claude\|codex]` | switch the project's engine |
+| `/compact` | compact history: summary → fresh session |
+| `/autocompact on\|off\|<tokens>` | auto-compaction and its threshold (e.g. `/autocompact 150k`) |
+| `/auto on\|off` | run tools without asking for permission |
+| `/skills` | skills available from the marketplace |
+| `/jobs` | heavy-task queue (broker) |
+| `/new` | start a new session |
+| `/sleep` | put the session to sleep manually |
+| `/stop` | interrupt the current reply |
+| `/login …` | credentials (see below) · `/cancel` aborts input |
+| `/help` · `/ping` | help · health check |
 
-## Входы (`/login`)
+## Login (`/login`)
 
-| | Что прислать |
+| | What to send |
 |---|---|
-| `/login claude` | `claude setup-token` (Pro/Max) → `sk-ant-oat…`, либо API-ключ `sk-ant-api…` |
-| `/login codex` | содержимое `~/.codex/auth.json` (подписка ChatGPT) или OpenAI API-ключ `sk-…` |
-| `/login github` | device flow — заходишь в свой GitHub; git работает от твоего имени |
-| `/login weeek` | токен из *workspace → настройки → API*; задачи ставятся от твоего имени |
+| `/login claude` | `claude setup-token` (Pro/Max) → `sk-ant-oat…`, or an API key `sk-ant-api…` |
+| `/login codex` | contents of `~/.codex/auth.json` (ChatGPT subscription) or an OpenAI API key `sk-…` |
+| `/login github` | device flow — sign into your own GitHub; git then acts as you |
+| `/login weeek` | token from *workspace → settings → API*; tasks are created as you |
 
-Сообщение с токеном бот удаляет сразу после сохранения; креды лежат `0600` в каталоге `0700`.
+The message carrying a token is deleted right after it's stored; credentials live `0600` in a `0700` dir.
 
-## Движки
+## Engines
 
-| Движок | Статус | Бэкенд | Модели | Окно |
+| Engine | Status | Backend | Models | Window |
 |---|---|---|---|---|
 | `claude` | ✅ live | Claude Agent SDK | opus · sonnet · haiku | 1M |
 | `codex` | ✅ live | `codex exec --json` + `resume` | gpt-5-codex · gpt-5 · o3 | — |
 | `opencode` | 🚧 stub | — | — | — |
 
-## Weeek — инструменты агента
+## Weeek — agent tools
 
-Доступны в Claude-сессиях после `/login weeek`, все действия — от имени токена:
+Available in Claude sessions after `/login weeek`; every action acts as the token owner:
 
 `list_projects` · `list_members` · `list_boards` · `list_board_columns` · `create_board` ·
-`list_tasks` · `create_task` (доска/колонка, исполнители, срок) · `update_task` (назначить/передатировать/
-перенести/закрыть) · `complete_task`.
+`list_tasks` · `create_task` (board/column, assignees, due date) · `update_task` (assign / re-date /
+move / close) · `complete_task`.
 
-## Конфигурация
+## Configuration
 
-Через env (`.env` в dev, `~/.config/apehub/bot.env` в проде):
+Via env (`.env` in dev, `~/.config/apehub/bot.env` in prod):
 
-| Переменная | Дефолт | Назначение |
+| Variable | Default | Purpose |
 |---|---|---|
-| `BOT_TOKEN` | — | токен Telegram-бота (обязательно) |
-| `FORUM_CHAT_ID` | — | id форум-супергруппы (обязательно) |
-| `DATA_DIR` | `./data` | sqlite + creds + рабочие папки проектов |
-| `HUB_DIR` | `/opt/apehub-hub` | клон общего маркетплейса скилов |
-| `CONTEXT_WINDOW` | `1000000` | окно модели для шкалы контекста |
-| `SLEEP_AFTER_MS` | `1800000` | простой до авто-сна (30 мин) |
-| `DEFAULT_ENGINE` | `claude` | движок новых проектов |
-| `GITHUB_CLIENT_ID` | — | client id OAuth-app для device flow (публичный) |
-| `MODEL` | — | модель по умолчанию |
+| `BOT_TOKEN` | — | Telegram bot token (required) |
+| `FORUM_CHAT_ID` | — | forum supergroup id (required) |
+| `DATA_DIR` | `./data` | sqlite + creds + project working dirs |
+| `HUB_DIR` | `/opt/apehub-hub` | clone of the shared skills marketplace |
+| `CONTEXT_WINDOW` | `1000000` | model context window for the gauge |
+| `SLEEP_AFTER_MS` | `1800000` | idle time before auto-sleep (30 min) |
+| `DEFAULT_ENGINE` | `claude` | engine for new projects |
+| `GITHUB_CLIENT_ID` | — | OAuth app client id for device flow (public) |
+| `MODEL` | — | default model override |
 
-## Запуск (dev)
+## Run (dev)
 
 ```sh
-cp .env.example .env     # заполни BOT_TOKEN + FORUM_CHAT_ID
+cp .env.example .env     # fill BOT_TOKEN + FORUM_CHAT_ID
 bun install
-export ANTHROPIC_API_KEY=...   # только для dev; в проде — /login или systemd LoadCredential
+export ANTHROPIC_API_KEY=...   # dev only; prod uses /login or systemd LoadCredential
 bun run start
 ```
 
-## Тесты
+## Tests
 
 ```sh
-bun test           # полный набор (движок замокан; без сети и ключей)
+bun test           # full suite (engine mocked; no network, no keys)
 bun run typecheck  # tsc --noEmit
 ```
 
-## Архитектура (модули)
+## Architecture (modules)
 
-| Файл | Ответственность |
+| File | Responsibility |
 |---|---|
-| `src/sessions.ts` | очередь на топик, cold-resume, watchdog-сон, авто-компакт, сборка MCP + env |
-| `src/engine.ts` + `src/engines/*` | `Engine`-шов и реализации (claude/codex/stub) |
-| `src/commands.ts` · `src/telegram.ts` | универсальные команды и роутинг grammY |
-| `src/bridge.ts` | разрешения-кнопки и `ask_user` |
-| `src/login.ts` · `src/github.ts` · `src/config.ts` | хранение кредов, device flow, резолв env |
-| `src/weeek.ts` · `src/hub.ts` · `src/broker.ts` | Weeek MCP, маркетплейс скилов, брокер джоб |
-| `src/db.ts` | состояние проектов (`bun:sqlite`, авто-миграции) |
+| `src/sessions.ts` | per-topic queue, cold-resume, sleep watchdog, auto-compaction, MCP + env assembly |
+| `src/engine.ts` + `src/engines/*` | the `Engine` seam and its implementations (claude/codex/stub) |
+| `src/commands.ts` · `src/telegram.ts` | universal commands and grammY routing |
+| `src/bridge.ts` | permission buttons and `ask_user` |
+| `src/login.ts` · `src/github.ts` · `src/config.ts` | credential storage, device flow, env resolution |
+| `src/weeek.ts` · `src/hub.ts` · `src/broker.ts` | Weeek MCP, skills marketplace, job broker |
+| `src/db.ts` | project state (`bun:sqlite`, auto-migrations) |
 
-## Безопасность
+## Security
 
-Секретов в репозитории нет. Бот custody'ит креды через `/login` — файлы `0600` в каталоге `0700`,
-по одному Unix-юзеру на инстанс (свои sqlite, creds, рабочие папки). Агенты работают под
-**непривилегированным** пользователем (без root). Модельный ключ в проде приходит через `/login`
-или systemd `LoadCredential`, не лежит в конфиге бота. Доступ к боту = членство в его форум-группе.
-`GITHUB_CLIENT_ID` — публичный, не секрет.
+No secrets live in this repo. The bot custodies credentials via `/login` — files `0600` in a `0700`
+dir, one Unix user per instance (its own sqlite, creds, working dirs). Agents run as an
+**unprivileged** user (no root). In prod the model key arrives via `/login` or systemd
+`LoadCredential`, never in the bot's config. Access to a bot = membership of its forum group.
+`GITHUB_CLIENT_ID` is public, not a secret.
 
-## Стек
+## Stack
 
 Bun · [grammY](https://grammy.dev) · TypeScript · `bun:sqlite` · `@anthropic-ai/claude-agent-sdk` · Codex CLI
